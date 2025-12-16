@@ -1,0 +1,41 @@
+diff --git a/src/payment/processor.ts b/src/payment/processor.ts
+index 1234567..abcdefg 100644
+--- a/src/payment/processor.ts
++++ b/src/payment/processor.ts
+@@ -15,10 +15,15 @@ export class PaymentProcessor {
+   }
+ 
+   async processPayment(amount: number, userId: string): Promise<PaymentResult> {
+-    // Simple payment processing
+-    const result = await this.stripe.charges.create({
++    // Enhanced payment processing with retry logic
++    let attempts = 0;
++    const maxRetries = 3;
++    
++    while (attempts < maxRetries) {
++      try {
++        const result = await this.stripe.charges.create({
+       amount: amount * 100,
+-      currency: 'usd',
++          currency: 'usd',
+       customer: userId,
+     });
+     
+@@ -26,6 +31,17 @@ export class PaymentProcessor {
+       success: true,
+       transactionId: result.id
+     };
++      } catch (error) {
++        attempts++;
++        if (attempts >= maxRetries) {
++          throw new Error(`Payment failed after ${maxRetries} attempts`);
++        }
++        await this.delay(1000 * attempts);
++      }
++    }
++  }
++
++  private delay(ms: number): Promise<void> {
++    return new Promise(resolve => setTimeout(resolve, ms));
+   }
+ }
