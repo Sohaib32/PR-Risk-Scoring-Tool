@@ -104,11 +104,16 @@ Keep it concise and human-readable.`;
       cleaned = cleaned.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '');
     }
 
-    let parsed: any;
+    let parsed: unknown;
     try {
       parsed = JSON.parse(cleaned);
     } catch (error) {
       throw new Error(`Invalid JSON response: ${content}`);
+    }
+
+    // Ensure parsed is an object
+    if (typeof parsed !== 'object' || parsed === null) {
+      throw new Error('Response must be a JSON object');
     }
 
     // Validate structure
@@ -127,34 +132,37 @@ Keep it concise and human-readable.`;
       }
     }
 
+    // Cast to record for easier access
+    const record = parsed as Record<string, unknown>;
+
     // Validate enums
     const validRiskLevels = ['LOW', 'MEDIUM', 'HIGH'];
-    if (!validRiskLevels.includes(parsed.risk_level)) {
-      throw new Error(`Invalid risk_level: ${parsed.risk_level}`);
+    if (!validRiskLevels.includes(record.risk_level as string)) {
+      throw new Error(`Invalid risk_level: ${record.risk_level}`);
     }
 
     const validMigrationRisks = ['NONE', 'LOW', 'HIGH'];
-    if (!validMigrationRisks.includes(parsed.migration_risk)) {
-      throw new Error(`Invalid migration_risk: ${parsed.migration_risk}`);
+    if (!validMigrationRisks.includes(record.migration_risk as string)) {
+      throw new Error(`Invalid migration_risk: ${record.migration_risk}`);
     }
 
     // Validate types
-    if (typeof parsed.risk_summary !== 'string') {
+    if (typeof record.risk_summary !== 'string') {
       throw new Error('risk_summary must be a string');
     }
 
-    if (!Array.isArray(parsed.risk_factors)) {
+    if (!Array.isArray(record.risk_factors)) {
       throw new Error('risk_factors must be an array');
     }
 
-    if (!Array.isArray(parsed.reviewer_focus_areas)) {
+    if (!Array.isArray(record.reviewer_focus_areas)) {
       throw new Error('reviewer_focus_areas must be an array');
     }
 
-    if (typeof parsed.missing_tests !== 'boolean') {
+    if (typeof record.missing_tests !== 'boolean') {
       throw new Error('missing_tests must be a boolean');
     }
 
-    return parsed as RiskAssessment;
+    return record as unknown as RiskAssessment;
   }
 }

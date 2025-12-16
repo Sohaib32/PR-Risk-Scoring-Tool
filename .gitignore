@@ -5,3 +5,5 @@ dist/
 .DS_Store
 coverage/
 *.tsbuildinfo
+package-lock.json
+test-basic.js

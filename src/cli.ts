@@ -54,7 +54,6 @@ async function main() {
       description: 'PR description (optional context)'
     })
     .help()
-    .alias('help', 'h')
     .version()
     .alias('version', 'v')
     .example('$0 --base main --head feature-branch', 'Analyze diff between branches')
