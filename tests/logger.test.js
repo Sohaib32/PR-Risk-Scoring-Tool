@@ -2,95 +2,95 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 
-test('logger mocks console methods to avoid output during tests', () => {
-  // Save original console methods
+const LOGGER_PATH = path.resolve(process.cwd(), 'dist', 'utils', 'logger.js');
+
+// Helper function to setup console mocks
+function setupConsoleMocks() {
   const originalLog = console.log;
   const originalWarn = console.warn;
   const originalError = console.error;
 
-  // Track calls to console methods
   const logCalls = [];
   const warnCalls = [];
   const errorCalls = [];
 
-  // Mock console methods
   console.log = (...args) => logCalls.push(args);
   console.warn = (...args) => warnCalls.push(args);
   console.error = (...args) => errorCalls.push(args);
 
+  return {
+    logCalls,
+    warnCalls,
+    errorCalls,
+    restore: () => {
+      console.log = originalLog;
+      console.warn = originalWarn;
+      console.error = originalError;
+    }
+  };
+}
+
+// Helper function to assert console calls contain expected text
+function assertContains(calls, expectedText) {
+  assert.ok(calls.some(arg => String(arg).includes(expectedText)));
+}
+
+test('logger mocks console methods to avoid output during tests', () => {
+  const mocks = setupConsoleMocks();
+
   try {
     // Import logger after mocking console
-    const { logger } = require(path.resolve(process.cwd(), 'dist', 'utils', 'logger.js'));
+    const { logger } = require(LOGGER_PATH);
 
     // Test info (default log level should be 'info')
     logger.info('test info message');
-    assert.equal(logCalls.length, 1);
-    assert.ok(logCalls[0].some(arg => String(arg).includes('info')));
-    assert.ok(logCalls[0].some(arg => String(arg).includes('test info message')));
+    assert.equal(mocks.logCalls.length, 1);
+    assertContains(mocks.logCalls[0], 'info');
+    assertContains(mocks.logCalls[0], 'test info message');
 
     // Test warn
     logger.warn('test warn message');
-    assert.equal(warnCalls.length, 1);
-    assert.ok(warnCalls[0].some(arg => String(arg).includes('warn')));
-    assert.ok(warnCalls[0].some(arg => String(arg).includes('test warn message')));
+    assert.equal(mocks.warnCalls.length, 1);
+    assertContains(mocks.warnCalls[0], 'warn');
+    assertContains(mocks.warnCalls[0], 'test warn message');
 
     // Test error
     logger.error('test error message');
-    assert.equal(errorCalls.length, 1);
-    assert.ok(errorCalls[0].some(arg => String(arg).includes('error')));
-    assert.ok(errorCalls[0].some(arg => String(arg).includes('test error message')));
+    assert.equal(mocks.errorCalls.length, 1);
+    assertContains(mocks.errorCalls[0], 'error');
+    assertContains(mocks.errorCalls[0], 'test error message');
 
     // Test debug (should not log at default 'info' level)
     logger.debug('test debug message');
     // logCalls should still be 1 (only the info call above)
-    assert.equal(logCalls.length, 1);
+    assert.equal(mocks.logCalls.length, 1);
 
   } finally {
-    // Restore original console methods
-    console.log = originalLog;
-    console.warn = originalWarn;
-    console.error = originalError;
+    mocks.restore();
   }
 });
 
 test('logger respects LOG_LEVEL environment variable', () => {
-  // Save original console methods and env
-  const originalLog = console.log;
-  const originalWarn = console.warn;
-  const originalError = console.error;
+  const mocks = setupConsoleMocks();
   const originalLogLevel = process.env.LOG_LEVEL;
-
-  // Track calls to console methods
-  const logCalls = [];
-  const warnCalls = [];
-  const errorCalls = [];
-
-  // Mock console methods
-  console.log = (...args) => logCalls.push(args);
-  console.warn = (...args) => warnCalls.push(args);
-  console.error = (...args) => errorCalls.push(args);
 
   try {
     // Set LOG_LEVEL to 'debug'
     process.env.LOG_LEVEL = 'debug';
 
     // Clear the require cache to reload logger with new env
-    const loggerPath = path.resolve(process.cwd(), 'dist', 'utils', 'logger.js');
-    delete require.cache[loggerPath];
+    delete require.cache[LOGGER_PATH];
     
-    const { logger } = require(loggerPath);
+    const { logger } = require(LOGGER_PATH);
 
     // Test debug (should now log at 'debug' level)
     logger.debug('test debug message');
-    assert.equal(logCalls.length, 1);
-    assert.ok(logCalls[0].some(arg => String(arg).includes('debug')));
-    assert.ok(logCalls[0].some(arg => String(arg).includes('test debug message')));
+    assert.equal(mocks.logCalls.length, 1);
+    assertContains(mocks.logCalls[0], 'debug');
+    assertContains(mocks.logCalls[0], 'test debug message');
 
   } finally {
-    // Restore original console methods and env
-    console.log = originalLog;
-    console.warn = originalWarn;
-    console.error = originalError;
+    mocks.restore();
     if (originalLogLevel !== undefined) {
       process.env.LOG_LEVEL = originalLogLevel;
     } else {
@@ -98,7 +98,6 @@ test('logger respects LOG_LEVEL environment variable', () => {
     }
 
     // Clear the require cache again
-    const loggerPath = path.resolve(process.cwd(), 'dist', 'utils', 'logger.js');
-    delete require.cache[loggerPath];
+    delete require.cache[LOGGER_PATH];
   }
 });
