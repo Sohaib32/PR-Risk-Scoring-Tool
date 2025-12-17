@@ -169,6 +169,32 @@ node scripts/run.js --file examples/sample-diff.txt
 node scripts/run.js --base main --head feature
 ```
 
+## Install Globally (Use in Any Project!) 🌍
+
+Want to use this tool in ALL your projects? Install it globally:
+
+```powershell
+# From this project folder
+npm run build
+npm link
+
+# Now go to ANY other project and use it!
+cd C:\path\to\your\other\project
+pr-risk-analyzer --uncommitted
+pr-risk-analyzer --base main --head feature
+pr-risk-analyzer --file my-changes.diff
+```
+
+**Benefits:**
+- ✅ Works in any folder
+- ✅ Short command: `pr-risk-analyzer` instead of `npx ts-node src/cli.ts`
+- ✅ Always uses your built version (faster!)
+
+**To uninstall:**
+```powershell
+npm unlink -g pr-risk-scoring-tool
+```
+
 ## Common Issues & Solutions
 
 ### ❌ "API key is required"
