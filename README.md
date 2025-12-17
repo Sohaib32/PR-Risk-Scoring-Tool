@@ -183,6 +183,26 @@ STDIN_MAX_SIZE_BYTES=10485760   # 10MB
 LOG_LEVEL=info                  # debug, info, warn, error
 ```
 
+## Global Installation (Use in Any Repo)
+
+To use this tool across all your projects:
+
+```bash
+# Build and link globally
+npm run build
+npm link
+
+# Now use it anywhere!
+cd /path/to/any-project
+pr-risk-analyzer --uncommitted
+pr-risk-analyzer --base main --head feature-branch
+```
+
+To uninstall:
+```bash
+npm unlink -g pr-risk-scoring-tool
+```
+
 ## Development
 
 **Build:**
