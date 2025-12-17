@@ -30,9 +30,9 @@ function setupConsoleMocks() {
   };
 }
 
-// Helper function to assert console calls contain expected text
-function assertContains(calls, expectedText) {
-  assert.ok(calls.some(arg => String(arg).includes(expectedText)));
+// Helper function to assert a console call's arguments contain expected text
+function assertContains(callArgs, expectedText) {
+  assert.ok(callArgs.some(arg => String(arg).includes(expectedText)));
 }
 
 test('logger mocks console methods to avoid output during tests', () => {
