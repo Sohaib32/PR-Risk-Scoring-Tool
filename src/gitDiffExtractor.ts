@@ -132,6 +132,7 @@ export class GitDiffExtractor {
 
       // Set a timeout to prevent hanging indefinitely
       let timeout: NodeJS.Timeout | null = setTimeout(() => {
+        cleanup();
         reject(new Error('Timeout waiting for stdin input'));
       }, timeoutMs);
 
@@ -142,34 +143,47 @@ export class GitDiffExtractor {
         }
       };
 
-      process.stdin.on('data', (chunk) => {
+      // Clean up event listeners and timeout
+      const cleanup = () => {
+        clearTimeoutSafely();
+        process.stdin.removeListener('data', onData);
+        process.stdin.removeListener('end', onEnd);
+        process.stdin.removeListener('error', onError);
+      };
+
+      const onData = (chunk: Buffer | string) => {
         data += chunk;
         // Enforce maximum size to avoid memory issues
         if (data.length > maxSizeBytes) {
-          clearTimeoutSafely();
+          cleanup();
           reject(new Error(`Input exceeds maximum size of ${Math.round(maxSizeBytes / (1024 * 1024))}MB`));
           return;
         }
         // Reset timeout on data - extend by configured amount
         clearTimeoutSafely();
         timeout = setTimeout(() => {
+          cleanup();
           reject(new Error('Timeout waiting for stdin input'));
         }, timeoutMs);
-      });
+      };
 
-      process.stdin.on('end', () => {
-        clearTimeoutSafely();
+      const onEnd = () => {
+        cleanup();
         if (!data || data.trim().length === 0) {
           reject(new Error('No data received from stdin'));
           return;
         }
         resolve(data);
-      });
+      };
 
-      process.stdin.on('error', (error) => {
-        clearTimeoutSafely();
+      const onError = (error: Error) => {
+        cleanup();
         reject(new Error(`Failed to read from stdin: ${error.message}`));
-      });
+      };
+
+      process.stdin.on('data', onData);
+      process.stdin.on('end', onEnd);
+      process.stdin.on('error', onError);
     });
   }
 }
