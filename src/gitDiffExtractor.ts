@@ -127,9 +127,21 @@ export class GitDiffExtractor {
       process.stdin.setEncoding('utf-8');
 
       // Configuration
-      const timeoutMs = options?.timeoutMs ?? (process.env.STDIN_TIMEOUT_MS ? Number(process.env.STDIN_TIMEOUT_MS) : 30000);
-      const maxSizeBytes = options?.maxSizeBytes ?? (process.env.STDIN_MAX_SIZE_BYTES ? Number(process.env.STDIN_MAX_SIZE_BYTES) : 10 * 1024 * 1024);
+      const envTimeoutMs = process.env.STDIN_TIMEOUT_MS ? Number(process.env.STDIN_TIMEOUT_MS) : undefined;
+      const envMaxSizeBytes = process.env.STDIN_MAX_SIZE_BYTES ? Number(process.env.STDIN_MAX_SIZE_BYTES) : undefined;
 
+      const resolvedTimeoutMs = options?.timeoutMs ?? envTimeoutMs;
+      const resolvedMaxSizeBytes = options?.maxSizeBytes ?? envMaxSizeBytes;
+
+      const timeoutMs =
+        typeof resolvedTimeoutMs === 'number' && Number.isFinite(resolvedTimeoutMs) && resolvedTimeoutMs > 0
+          ? resolvedTimeoutMs
+          : 30000;
+
+      const maxSizeBytes =
+        typeof resolvedMaxSizeBytes === 'number' && Number.isFinite(resolvedMaxSizeBytes) && resolvedMaxSizeBytes > 0
+          ? resolvedMaxSizeBytes
+          : 10 * 1024 * 1024;
       // Set a timeout to prevent hanging indefinitely
       let timeout: NodeJS.Timeout | null = setTimeout(() => {
         cleanup();
