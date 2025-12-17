@@ -4,7 +4,7 @@ An AI-powered tool that analyzes pull request diffs and produces risk assessment
 
 ## Features
 
-- **LLM-Powered Analysis**: Uses OpenAI GPT-4 to analyze code changes
+- **LLM-Powered Analysis**: Uses Groq's Llama models to analyze code changes
 - **Production Risk Assessment**: Evaluates critical paths, tests, migrations, and runtime impact
 - **Structured JSON Output**: Returns consistent, machine-readable risk assessments
 - **Multiple Input Methods**: Supports git branches, files, stdin, or uncommitted changes
@@ -21,7 +21,12 @@ npm run build
 
 ### Prerequisites
 
-Set your OpenAI API key:
+Set your Groq API key:
+```bash
+export GROQ_API_KEY='your-api-key-here'
+```
+
+Alternatively, you can use `OPENAI_API_KEY` (for backward compatibility):
 ```bash
 export OPENAI_API_KEY='your-api-key-here'
 ```
@@ -59,7 +64,7 @@ npm run dev -- --base main --head feature --title "Add payment feature" --descri
 import { RiskAnalyzer, GitDiffExtractor } from 'pr-risk-scoring-tool';
 
 // Initialize analyzer
-const analyzer = new RiskAnalyzer(process.env.OPENAI_API_KEY);
+const analyzer = new RiskAnalyzer(process.env.GROQ_API_KEY);
 
 // Get diff
 const extractor = new GitDiffExtractor();
@@ -114,7 +119,16 @@ npm run build
 
 **Run in development:**
 ```bash
-npm run dev -- [options]
+npx ts-node src/cli.ts --uncommitted
+npx ts-node src/cli.ts --file examples/sample-diff.txt
+```
+
+**Run after building:**
+```bash
+npm run build
+npm run analyze:uncommitted
+# or
+node scripts/run.js --uncommitted
 ```
 
 **Lint:**

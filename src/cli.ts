@@ -4,11 +4,16 @@
  * CLI for PR Risk Scoring Tool
  */
 
+import dotenv from 'dotenv';
 import yargs from 'yargs';
 import { hideBin } from 'yargs/helpers';
 import { RiskAnalyzer } from './riskAnalyzer';
 import { GitDiffExtractor } from './gitDiffExtractor';
 import { DiffAnalysisInput } from './types';
+import { formatRiskAssessment, formatRiskAssessmentJSON } from './formatter';
+
+// Load environment variables from .env file
+dotenv.config();
 
 async function main() {
   const argv = await yargs(hideBin(process.argv))
@@ -41,7 +46,7 @@ async function main() {
     .option('api-key', {
       alias: 'k',
       type: 'string',
-      description: 'OpenAI API key (or set OPENAI_API_KEY env var)'
+      description: 'Groq API key (or set GROQ_API_KEY or OPENAI_API_KEY env var)'
     })
     .option('title', {
       alias: 't',
@@ -52,6 +57,13 @@ async function main() {
       alias: 'd',
       type: 'string',
       description: 'PR description (optional context)'
+    })
+    .option('format', {
+      alias: 'o',
+      type: 'string',
+      choices: ['json', 'pretty', 'beautiful'],
+      default: 'beautiful',
+      description: 'Output format: json (raw JSON), pretty (colored JSON), beautiful (formatted report)'
     })
     .help()
     .version()
@@ -96,12 +108,32 @@ async function main() {
 
     const assessment = await analyzer.analyzeDiff(input);
 
-    // Output the result as JSON
-    console.log(JSON.stringify(assessment, null, 2));
+    // Output the result based on format option
+    const format = argv.format || 'beautiful';
+    
+    switch (format) {
+      case 'json':
+        // Raw JSON output
+        console.log(JSON.stringify(assessment, null, 2));
+        break;
+      case 'pretty':
+        // Colored JSON output
+        console.log(formatRiskAssessmentJSON(assessment));
+        break;
+      case 'beautiful':
+      default:
+        // Beautiful formatted output
+        console.log(formatRiskAssessment(assessment));
+        break;
+    }
 
   } catch (error) {
     if (error instanceof Error) {
       console.error(`Error: ${error.message}`);
+      // Log stack trace in development mode
+      if (process.env.NODE_ENV === 'development' && error.stack) {
+        console.error('\nStack trace:', error.stack);
+      }
     } else {
       console.error('Unknown error occurred');
     }

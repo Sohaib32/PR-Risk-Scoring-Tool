@@ -4,27 +4,60 @@
 
 import OpenAI from 'openai';
 import { RiskAssessment, DiffAnalysisInput } from './types';
+import { RiskSchema } from './schema';
 
+// Maximum diff size to prevent token limit issues (approximately 100KB)
+const MAX_DIFF_SIZE = 100 * 1024;
+
+/**
+ * RiskAnalyzer class for analyzing git diffs and assessing production risk
+ * Uses Groq's LLM API (via OpenAI SDK) to analyze code changes
+ */
 export class RiskAnalyzer {
   private openai: OpenAI;
 
+  /**
+   * Creates a new RiskAnalyzer instance
+   * @param apiKey - Optional Groq API key. If not provided, will use GROQ_API_KEY or OPENAI_API_KEY from environment
+   * @throws Error if no API key is provided
+   */
   constructor(apiKey?: string) {
-    const key = apiKey || process.env.OPENAI_API_KEY;
+    const key = apiKey || process.env.GROQ_API_KEY || process.env.OPENAI_API_KEY;
     if (!key) {
-      throw new Error('OpenAI API key is required. Set OPENAI_API_KEY environment variable.');
+      throw new Error(
+        'API key is required. Set GROQ_API_KEY or OPENAI_API_KEY environment variable.'
+      );
     }
-    this.openai = new OpenAI({ apiKey: key });
+    this.openai = new OpenAI({ 
+      apiKey: key,
+      baseURL: 'https://api.groq.com/openai/v1'
+    });
   }
 
   /**
    * Analyze a git diff for production risk
+   * @param input - The diff and optional PR context
+   * @returns A validated risk assessment
+   * @throws Error if diff is empty, too large, or analysis fails
    */
   async analyzeDiff(input: DiffAnalysisInput): Promise<RiskAssessment> {
+    // Validate input
+    if (!input.diff || input.diff.trim().length === 0) {
+      throw new Error('Diff cannot be empty');
+    }
+
+    if (input.diff.length > MAX_DIFF_SIZE) {
+      throw new Error(
+        `Diff is too large (${Math.round(input.diff.length / 1024)}KB). ` +
+        `Maximum size is ${MAX_DIFF_SIZE / 1024}KB. Consider analyzing smaller chunks.`
+      );
+    }
+
     const prompt = this.buildPrompt(input);
     
     try {
       const response = await this.openai.chat.completions.create({
-        model: 'gpt-4',
+        model: 'llama-3.3-70b-versatile',
         messages: [
           {
             role: 'system',
@@ -36,7 +69,8 @@ export class RiskAnalyzer {
           }
         ],
         temperature: 0.3,
-        max_tokens: 1000
+        max_tokens: 2000,
+        response_format: { type: 'json_object' }
       });
 
       const content = response.choices[0]?.message?.content;
@@ -44,17 +78,26 @@ export class RiskAnalyzer {
         throw new Error('No response from LLM');
       }
 
-      // Parse and validate the JSON response
+      // Parse and validate the JSON response using Zod
       const assessment = this.parseAndValidate(content);
       return assessment;
     } catch (error) {
       if (error instanceof Error) {
+        // Preserve Zod validation errors
+        if (error.message.includes('Required') || error.message.includes('Invalid enum')) {
+          throw new Error(`Invalid response format from LLM: ${error.message}`);
+        }
         throw new Error(`Risk analysis failed: ${error.message}`);
       }
       throw error;
     }
   }
 
+  /**
+   * Builds the prompt for LLM analysis
+   * @param input - The diff and optional PR context
+   * @returns The formatted prompt string
+   */
   private buildPrompt(input: DiffAnalysisInput): string {
     let prompt = `Analyze this git diff for production risk. Focus on critical paths, tests, migrations, and runtime impact.
 
@@ -97,6 +140,12 @@ Keep it concise and human-readable.`;
     return prompt;
   }
 
+  /**
+   * Parse and validate LLM response using Zod schema
+   * @param content - Raw content from LLM
+   * @returns Validated risk assessment
+   * @throws Error if content cannot be parsed or validated
+   */
   private parseAndValidate(content: string): RiskAssessment {
     // Remove markdown code blocks if present
     let cleaned = content.trim();
@@ -108,61 +157,16 @@ Keep it concise and human-readable.`;
     try {
       parsed = JSON.parse(cleaned);
     } catch (error) {
-      throw new Error(`Invalid JSON response: ${content}`);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      throw new Error(`Invalid JSON response: ${errorMessage}. Content: ${content.substring(0, 200)}...`);
     }
 
-    // Ensure parsed is an object
-    if (typeof parsed !== 'object' || parsed === null) {
-      throw new Error('Response must be a JSON object');
+    // Validate using Zod schema
+    try {
+      return RiskSchema.parse(parsed) as RiskAssessment;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown validation error';
+      throw new Error(`Response validation failed: ${errorMessage}`);
     }
-
-    // Validate structure
-    const requiredFields = [
-      'risk_level',
-      'risk_summary',
-      'risk_factors',
-      'reviewer_focus_areas',
-      'missing_tests',
-      'migration_risk'
-    ];
-
-    for (const field of requiredFields) {
-      if (!(field in parsed)) {
-        throw new Error(`Missing required field: ${field}`);
-      }
-    }
-
-    // Cast to record for easier access
-    const record = parsed as Record<string, unknown>;
-
-    // Validate enums
-    const validRiskLevels = ['LOW', 'MEDIUM', 'HIGH'];
-    if (!validRiskLevels.includes(record.risk_level as string)) {
-      throw new Error(`Invalid risk_level: ${record.risk_level}`);
-    }
-
-    const validMigrationRisks = ['NONE', 'LOW', 'HIGH'];
-    if (!validMigrationRisks.includes(record.migration_risk as string)) {
-      throw new Error(`Invalid migration_risk: ${record.migration_risk}`);
-    }
-
-    // Validate types
-    if (typeof record.risk_summary !== 'string') {
-      throw new Error('risk_summary must be a string');
-    }
-
-    if (!Array.isArray(record.risk_factors)) {
-      throw new Error('risk_factors must be an array');
-    }
-
-    if (!Array.isArray(record.reviewer_focus_areas)) {
-      throw new Error('reviewer_focus_areas must be an array');
-    }
-
-    if (typeof record.missing_tests !== 'boolean') {
-      throw new Error('missing_tests must be a boolean');
-    }
-
-    return record as unknown as RiskAssessment;
   }
 }
