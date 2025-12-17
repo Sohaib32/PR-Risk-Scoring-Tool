@@ -5,6 +5,8 @@
 import OpenAI from 'openai';
 import { RiskAssessment, DiffAnalysisInput } from './types';
 import { RiskSchema } from './schema';
+import { getLLMConfig } from './config/env';
+import { logger } from './utils/logger';
 
 // Maximum diff size to prevent token limit issues (approximately 100KB)
 const MAX_DIFF_SIZE = 100 * 1024;
@@ -22,16 +24,9 @@ export class RiskAnalyzer {
    * @throws Error if no API key is provided
    */
   constructor(apiKey?: string) {
-    const key = apiKey || process.env.GROQ_API_KEY || process.env.OPENAI_API_KEY;
-    if (!key) {
-      throw new Error(
-        'API key is required. Set GROQ_API_KEY or OPENAI_API_KEY environment variable.'
-      );
-    }
-    this.openai = new OpenAI({ 
-      apiKey: key,
-      baseURL: 'https://api.groq.com/openai/v1'
-    });
+    const { apiKey: resolvedKey, baseURL, provider } = getLLMConfig(apiKey);
+    logger.debug(`Using LLM provider: ${provider}${baseURL ? ' (custom baseURL)' : ''}`);
+    this.openai = new OpenAI({ apiKey: resolvedKey, baseURL });
   }
 
   /**

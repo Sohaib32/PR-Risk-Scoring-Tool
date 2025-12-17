@@ -8,12 +8,12 @@
   },
   "scripts": {
     "build": "tsc",
-    "start": "node scripts/run.js",
+    "start": "node scripts/run.js --help",
     "dev": "ts-node src/cli.ts",
     "analyze": "ts-node src/cli.ts",
     "analyze:uncommitted": "node scripts/run.js --uncommitted",
     "analyze:file": "node scripts/run.js --file",
-    "test": "jest",
+    "test": "npm run build && node --test tests",
     "lint": "eslint src --ext .ts"
   },
   "keywords": [

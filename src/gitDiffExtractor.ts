@@ -115,7 +115,7 @@ export class GitDiffExtractor {
    * @returns The content read from stdin
    * @throws Error if stdin read fails
    */
-  static async readDiffFromStdin(): Promise<string> {
+  static async readDiffFromStdin(options?: { timeoutMs?: number; maxSizeBytes?: number }): Promise<string> {
     return new Promise((resolve, reject) => {
       // Check if stdin is a TTY (terminal) - if so, there's no input
       if (process.stdin.isTTY) {
@@ -126,10 +126,14 @@ export class GitDiffExtractor {
       let data = '';
       process.stdin.setEncoding('utf-8');
 
-      // Set a timeout to prevent hanging indefinitely (30 seconds)
+      // Configuration
+      const timeoutMs = options?.timeoutMs ?? (process.env.STDIN_TIMEOUT_MS ? Number(process.env.STDIN_TIMEOUT_MS) : 30000);
+      const maxSizeBytes = options?.maxSizeBytes ?? (process.env.STDIN_MAX_SIZE_BYTES ? Number(process.env.STDIN_MAX_SIZE_BYTES) : 10 * 1024 * 1024);
+
+      // Set a timeout to prevent hanging indefinitely
       let timeout: NodeJS.Timeout | null = setTimeout(() => {
         reject(new Error('Timeout waiting for stdin input'));
-      }, 30000);
+      }, timeoutMs);
 
       const clearTimeoutSafely = () => {
         if (timeout) {
@@ -140,11 +144,17 @@ export class GitDiffExtractor {
 
       process.stdin.on('data', (chunk) => {
         data += chunk;
-        // Reset timeout on data - extend by another 30 seconds
+        // Enforce maximum size to avoid memory issues
+        if (data.length > maxSizeBytes) {
+          clearTimeoutSafely();
+          reject(new Error(`Input exceeds maximum size of ${Math.round(maxSizeBytes / (1024 * 1024))}MB`));
+          return;
+        }
+        // Reset timeout on data - extend by configured amount
         clearTimeoutSafely();
         timeout = setTimeout(() => {
           reject(new Error('Timeout waiting for stdin input'));
-        }, 30000);
+        }, timeoutMs);
       });
 
       process.stdin.on('end', () => {
