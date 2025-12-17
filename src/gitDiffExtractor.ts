@@ -115,7 +115,7 @@ export class GitDiffExtractor {
    * @returns The content read from stdin
    * @throws Error if stdin read fails
    */
-  static async readDiffFromStdin(): Promise<string> {
+  static async readDiffFromStdin(options?: { timeoutMs?: number; maxSizeBytes?: number }): Promise<string> {
     return new Promise((resolve, reject) => {
       // Check if stdin is a TTY (terminal) - if so, there's no input
       if (process.stdin.isTTY) {
@@ -126,10 +126,27 @@ export class GitDiffExtractor {
       let data = '';
       process.stdin.setEncoding('utf-8');
 
-      // Set a timeout to prevent hanging indefinitely (30 seconds)
+      // Configuration
+      const envTimeoutMs = process.env.STDIN_TIMEOUT_MS ? Number(process.env.STDIN_TIMEOUT_MS) : undefined;
+      const envMaxSizeBytes = process.env.STDIN_MAX_SIZE_BYTES ? Number(process.env.STDIN_MAX_SIZE_BYTES) : undefined;
+
+      const resolvedTimeoutMs = options?.timeoutMs ?? envTimeoutMs;
+      const resolvedMaxSizeBytes = options?.maxSizeBytes ?? envMaxSizeBytes;
+
+      const timeoutMs =
+        typeof resolvedTimeoutMs === 'number' && Number.isFinite(resolvedTimeoutMs) && resolvedTimeoutMs > 0
+          ? resolvedTimeoutMs
+          : 30000;
+
+      const maxSizeBytes =
+        typeof resolvedMaxSizeBytes === 'number' && Number.isFinite(resolvedMaxSizeBytes) && resolvedMaxSizeBytes > 0
+          ? resolvedMaxSizeBytes
+          : 10 * 1024 * 1024;
+      // Set a timeout to prevent hanging indefinitely
       let timeout: NodeJS.Timeout | null = setTimeout(() => {
+        cleanup();
         reject(new Error('Timeout waiting for stdin input'));
-      }, 30000);
+      }, timeoutMs);
 
       const clearTimeoutSafely = () => {
         if (timeout) {
@@ -138,28 +155,47 @@ export class GitDiffExtractor {
         }
       };
 
-      process.stdin.on('data', (chunk) => {
+      // Clean up event listeners and timeout
+      const cleanup = () => {
+        clearTimeoutSafely();
+        process.stdin.removeListener('data', onData);
+        process.stdin.removeListener('end', onEnd);
+        process.stdin.removeListener('error', onError);
+      };
+
+      const onData = (chunk: Buffer | string) => {
         data += chunk;
-        // Reset timeout on data - extend by another 30 seconds
+        // Enforce maximum size to avoid memory issues
+        if (data.length > maxSizeBytes) {
+          cleanup();
+          reject(new Error(`Input exceeds maximum size of ${Math.round(maxSizeBytes / (1024 * 1024))}MB`));
+          return;
+        }
+        // Reset timeout on data - extend by configured amount
         clearTimeoutSafely();
         timeout = setTimeout(() => {
+          cleanup();
           reject(new Error('Timeout waiting for stdin input'));
-        }, 30000);
-      });
+        }, timeoutMs);
+      };
 
-      process.stdin.on('end', () => {
-        clearTimeoutSafely();
+      const onEnd = () => {
+        cleanup();
         if (!data || data.trim().length === 0) {
           reject(new Error('No data received from stdin'));
           return;
         }
         resolve(data);
-      });
+      };
 
-      process.stdin.on('error', (error) => {
-        clearTimeoutSafely();
+      const onError = (error: Error) => {
+        cleanup();
         reject(new Error(`Failed to read from stdin: ${error.message}`));
-      });
+      };
+
+      process.stdin.on('data', onData);
+      process.stdin.on('end', onEnd);
+      process.stdin.on('error', onError);
     });
   }
 }

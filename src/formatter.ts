@@ -62,7 +62,7 @@ export function formatRiskAssessment(assessment: RiskAssessment): string {
   // Risk Factors
   if (assessment.risk_factors.length > 0) {
     lines.push(chalk.bold.red('⚠️  Risk Factors:'));
-    assessment.risk_factors.forEach((factor, index) => {
+    assessment.risk_factors.forEach((factor) => {
       lines.push(chalk.gray('  ') + chalk.red('  • ') + factor);
     });
     lines.push('');
@@ -71,7 +71,7 @@ export function formatRiskAssessment(assessment: RiskAssessment): string {
   // Reviewer Focus Areas
   if (assessment.reviewer_focus_areas.length > 0) {
     lines.push(chalk.bold.blue('👀 Reviewer Focus Areas:'));
-    assessment.reviewer_focus_areas.forEach((area, index) => {
+    assessment.reviewer_focus_areas.forEach((area) => {
       lines.push(chalk.gray('  ') + chalk.blue('  • ') + area);
     });
     lines.push('');

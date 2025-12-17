@@ -4,16 +4,9 @@
  * CLI for PR Risk Scoring Tool
  */
 
-import dotenv from 'dotenv';
 import yargs from 'yargs';
 import { hideBin } from 'yargs/helpers';
-import { RiskAnalyzer } from './riskAnalyzer';
-import { GitDiffExtractor } from './gitDiffExtractor';
-import { DiffAnalysisInput } from './types';
-import { formatRiskAssessment, formatRiskAssessmentJSON } from './formatter';
-
-// Load environment variables from .env file
-dotenv.config();
+import type { DiffAnalysisInput } from './types';
 
 async function main() {
   const argv = await yargs(hideBin(process.argv))
@@ -75,6 +68,11 @@ async function main() {
     .argv;
 
   try {
+    // Lazy imports to avoid loading env/providers on --help
+    const { GitDiffExtractor } = await import('./gitDiffExtractor');
+    const { RiskAnalyzer } = await import('./riskAnalyzer');
+    const { formatRiskAssessment, formatRiskAssessmentJSON } = await import('./formatter');
+
     // Get the diff
     let diff: string;
 
