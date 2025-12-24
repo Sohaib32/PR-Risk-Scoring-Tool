@@ -65,6 +65,12 @@ async function runInteractive() {
       }
     } else if (sourceChoice === '4') {
       useStdin = true;
+      if (process.stdin.isTTY) {
+        throw new Error(
+          'No diff data was provided on stdin. To use option 4, pipe a diff into pr-risk-analyzer, e.g.:\n' +
+            '  git diff | pr-risk-analyzer --interactive'
+        );
+      }
     } else {
       throw new Error('Invalid choice. Please run again and choose 1, 2, 3, or 4.');
     }
