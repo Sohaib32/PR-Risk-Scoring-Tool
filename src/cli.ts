@@ -116,6 +116,12 @@ async function runInteractive() {
       failOnRisk: failOnRisk || undefined,
       failOnMissingTests,
     };
+  } catch (err) {
+    console.error(chalk.red('An error occurred during interactive prompts. Exiting.'));
+    if (err instanceof Error && err.message) {
+      console.error(chalk.gray(err.message));
+    }
+    throw err;
   } finally {
     close();
   }
