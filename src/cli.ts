@@ -230,11 +230,14 @@ async function main() {
     const effectiveHead = interactiveOptions?.head ?? argv.head;
     const effectiveStdin =
       interactiveOptions?.useStdin ?? (argv.stdin as boolean | undefined);
+    const interactiveUncommitted =
+      !!interactiveOptions &&
+      !interactiveOptions.file &&
+      !interactiveOptions.base &&
+      !interactiveOptions.head &&
+      !interactiveOptions.useStdin;
     const effectiveUncommitted = interactiveOptions
-      ? !interactiveOptions.file &&
-        !interactiveOptions.base &&
-        !interactiveOptions.head &&
-        !interactiveOptions.useStdin
+      ? interactiveUncommitted
       : argv.uncommitted;
 
     // Get the diff
