@@ -39,7 +39,7 @@ async function runInteractive() {
     console.log(
       `  ${chalk.green(
         '4)'
-      )} Diff from stdin (pipe or paste, e.g. git diff | pr-risk-analyzer --interactive)`
+      )} Diff from stdin (pipe or paste, e.g. git diff | pr-risk-analyzer)`
     );
     console.log('');
 
