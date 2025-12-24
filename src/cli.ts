@@ -293,7 +293,7 @@ async function main() {
     if (failOnRisk) {
       const threshold = riskLevelOrder[failOnRisk];
       const actual = riskLevelOrder[assessment.risk_level];
-      if (threshold !== undefined && actual >= threshold) {
+      if (threshold !== undefined && actual !== undefined && actual >= threshold) {
         exitCode = 2; // 2 = failed due to high-enough risk
       }
     }
