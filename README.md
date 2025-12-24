@@ -52,6 +52,9 @@ npx ts-node src/cli.ts --file examples/sample-diff.txt
 
 # Analyze uncommitted changes
 npx ts-node src/cli.ts --uncommitted
+
+# Launch interactive UI (menu-based)
+npx ts-node src/cli.ts --ui
 ```
 
 ## Usage
@@ -78,11 +81,10 @@ git diff main..feature | npx ts-node src/cli.ts --stdin
 npx ts-node src/cli.ts --uncommitted
 ```
 
-**With PR context for better analysis:**
+**With PR title for better analysis:**
 ```bash
 npx ts-node src/cli.ts --base main --head feature \
-  --title "Add payment retry logic" \
-  --description "Implements exponential backoff for failed payments"
+  --title "Add payment retry logic"
 ```
 
 **Different output formats:**
@@ -97,6 +99,15 @@ npx ts-node src/cli.ts --file diff.txt --format pretty
 npx ts-node src/cli.ts --file diff.txt --format json
 ```
 
+**Interactive UI mode (menu-based):**
+```bash
+# TypeScript (dev)
+npx ts-node src/cli.ts --ui
+
+# Built JS
+node scripts/run.js --ui
+```
+
 ### After Building
 
 ```bash
@@ -106,6 +117,27 @@ npm run build
 node scripts/run.js --uncommitted
 npm run analyze:uncommitted
 ```
+
+### CI Integration
+
+- **Fail pipeline on high risk:**
+
+```bash
+pr-risk-analyzer --base main --head $GITHUB_SHA --format json --fail-on-risk HIGH
+```
+
+- **Also fail when tests are missing:**
+
+```bash
+pr-risk-analyzer --base main --head $GITHUB_SHA --format json --fail-on-risk MEDIUM --fail-on-missing-tests
+```
+
+**Exit codes (for CI):**
+
+- `0` – Analysis succeeded, thresholds not violated  
+- `1` – CLI/tool error (invalid input, API failure, etc.)  
+- `2` – Failed due to `risk_level` meeting or exceeding `--fail-on-risk`  
+- `3` – Failed because tests are missing (`missing_tests` is `true`) and `--fail-on-missing-tests` is set, but the risk threshold is *not* violated (if the risk threshold is violated, exit code `2` is used)
 
 ### Programmatic Usage
 
@@ -192,10 +224,23 @@ To use this tool across all your projects:
 npm run build
 npm link
 
-# Now use it anywhere!
+# Now use it anywhere (in any git repo)
 cd /path/to/any-project
+
+# Analyze uncommitted changes
 pr-risk-analyzer --uncommitted
+
+# Analyze between branches/commits
 pr-risk-analyzer --base main --head feature-branch
+
+# Analyze from a diff file
+pr-risk-analyzer --file my-changes.diff
+
+# Pipe git diff via stdin
+git diff main..HEAD | pr-risk-analyzer --stdin
+
+# Launch interactive UI (menu-based)
+pr-risk-analyzer --ui
 ```
 
 To uninstall:
