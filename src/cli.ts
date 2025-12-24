@@ -311,7 +311,7 @@ async function main() {
       interactiveOptions?.failOnMissingTests ??
       ((argv['fail-on-missing-tests'] as boolean | undefined) ?? false);
     if (failOnMissingTests && assessment.missing_tests) {
-      // If not already failing for risk, use a distinct code for missing tests
+      // Use exit code 3 for missing tests, but keep exit code 2 if risk threshold was already violated
       exitCode = exitCode === 0 ? 3 : exitCode;
     }
 
