@@ -137,7 +137,7 @@ pr-risk-analyzer --base main --head $GITHUB_SHA --format json --fail-on-risk MED
 - `0` – Analysis succeeded, thresholds not violated  
 - `1` – CLI/tool error (invalid input, API failure, etc.)  
 - `2` – Failed due to `risk_level` meeting or exceeding `--fail-on-risk`  
-- `3` – Failed because `missing_tests` is `true` and `--fail-on-missing-tests` is set
+- `3` – Failed because tests are missing (`missing_tests` is `true`) and `--fail-on-missing-tests` is set, but the risk threshold is *not* violated (if the risk threshold is violated, exit code `2` is used)
 
 ### Programmatic Usage
 
