@@ -104,17 +104,25 @@ npx ts-node src/cli.ts --base main --head feature-branch
 
 This shows you the risk of merging `feature-branch` into `main`.
 
-### Example 4: Analyze with Context (Better Results!)
+### Example 4: Analyze with Title Context (Better Results!)
 
-Add a title and description for more accurate analysis:
+Add a PR title for more accurate analysis:
 
 ```powershell
-npx ts-node src/cli.ts --file examples/sample-diff.txt --title "Add user login" --description "Implements JWT authentication for user login flow"
+npx ts-node src/cli.ts --file examples/sample-diff.txt --title "Add user login"
 ```
 
 The AI understands your changes better with context!
 
-### Example 5: Get JSON Output (For Scripts/CI)
+### Example 5: Use the Interactive UI
+
+Launch the menu-based UI (no need to remember all flags):
+
+```powershell
+npx ts-node src/cli.ts --ui
+```
+
+### Example 6: Get JSON Output (For Scripts/CI)
 
 ```powershell
 npx ts-node src/cli.ts --file examples/sample-diff.txt --format json
@@ -132,7 +140,7 @@ npx ts-node src/cli.ts --file examples/sample-diff.txt --format json
 }
 ```
 
-### Example 6: Pipe Git Diff Directly
+### Example 7: Pipe Git Diff Directly
 
 ```powershell
 git diff | npx ts-node src/cli.ts --stdin

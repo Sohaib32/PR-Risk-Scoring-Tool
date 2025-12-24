@@ -6,7 +6,114 @@
 
 import yargs from 'yargs';
 import { hideBin } from 'yargs/helpers';
+import * as readline from 'readline';
+import chalk from 'chalk';
 import type { DiffAnalysisInput } from './types';
+
+function createQuestionInterface() {
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+
+  const question = (q: string) =>
+    new Promise<string>((resolve) => {
+      rl.question(q, (answer) => resolve(answer.trim()));
+    });
+
+  const close = () => rl.close();
+
+  return { question, close };
+}
+
+async function runInteractive() {
+  const { question, close } = createQuestionInterface();
+
+  try {
+    console.log(chalk.cyan.bold('PR Risk Analyzer - Interactive Mode'));
+    console.log(chalk.cyan('==================================='));
+    console.log(chalk.bold('Choose what you want to analyze:'));
+    console.log(`  ${chalk.green('1)')} Diff from file`);
+    console.log(`  ${chalk.green('2)')} Uncommitted git changes`);
+    console.log(`  ${chalk.green('3)')} Between two branches/commits`);
+    console.log(
+      `  ${chalk.green(
+        '4)'
+      )} Diff from stdin (pipe or paste, e.g. git diff | pr-risk-analyzer --interactive)`
+    );
+    console.log('');
+
+    const sourceChoice = await question(chalk.yellow('Enter choice (1-4): '));
+
+    let file: string | undefined;
+    let base: string | undefined;
+    let head: string | undefined;
+    let useStdin = false;
+
+    if (sourceChoice === '1') {
+      file = await question(chalk.yellow('Path to diff file: '));
+      if (!file) {
+        throw new Error('Diff file path is required');
+      }
+    } else if (sourceChoice === '2') {
+      // uncommitted: nothing extra needed
+    } else if (sourceChoice === '3') {
+      base = await question(chalk.yellow('Base branch/commit (e.g. main): '));
+      head = await question(chalk.yellow('Head branch/commit (e.g. feature-branch): '));
+      if (!base || !head) {
+        throw new Error('Both base and head are required for branch comparison');
+      }
+    } else if (sourceChoice === '4') {
+      useStdin = true;
+    } else {
+      throw new Error('Invalid choice. Please run again and choose 1, 2, 3, or 4.');
+    }
+
+    console.log('');
+    const title = await question(
+      chalk.yellow('PR title (optional, press Enter to skip): ')
+    );
+
+    console.log('');
+    console.log(chalk.bold('Choose output format:'));
+    console.log(`  ${chalk.green('1)')} Beautiful report (default)`);
+    console.log(`  ${chalk.green('2)')} Colored JSON`);
+    console.log(`  ${chalk.green('3)')} Raw JSON`);
+    const formatChoice = await question(chalk.yellow('Enter choice (1-3): '));
+
+    let format: 'beautiful' | 'pretty' | 'json' = 'beautiful';
+    if (formatChoice === '2') format = 'pretty';
+    if (formatChoice === '3') format = 'json';
+
+    console.log('');
+    console.log(chalk.bold('\nCI-style options (optional)'));
+    console.log(chalk.gray('---------------------------'));
+    const failOnRisk = await question(
+      chalk.yellow('Fail if risk is at least (LOW/MEDIUM/HIGH, or Enter to skip): ')
+    );
+
+    const failOnMissingTestsAnswer = await question(
+      chalk.yellow('Fail when tests are missing? (y/N): ')
+    );
+    const failOnMissingTests =
+      failOnMissingTestsAnswer.toLowerCase() === 'y' ||
+      failOnMissingTestsAnswer.toLowerCase() === 'yes';
+
+    return {
+      file: file || undefined,
+      base: base || undefined,
+      head: head || undefined,
+      useStdin,
+      title: title || undefined,
+      description: undefined,
+      format,
+      failOnRisk: failOnRisk || undefined,
+      failOnMissingTests,
+    };
+  } finally {
+    close();
+  }
+}
 
 async function main() {
   const argv = await yargs(hideBin(process.argv))
@@ -58,6 +165,20 @@ async function main() {
       default: 'beautiful',
       description: 'Output format: json (raw JSON), pretty (colored JSON), beautiful (formatted report)'
     })
+    .option('fail-on-risk', {
+      type: 'string',
+      choices: ['LOW', 'MEDIUM', 'HIGH'],
+      description: 'If set, exit with non-zero code when overall risk_level is >= given threshold (for CI)'
+    })
+    .option('fail-on-missing-tests', {
+      type: 'boolean',
+      description: 'If set, exit with non-zero code when missing_tests is true'
+    })
+    .option('ui', {
+      alias: 'i',
+      type: 'boolean',
+      description: 'Run in interactive UI mode with menus and prompts'
+    })
     .help()
     .version()
     .alias('version', 'v')
@@ -73,19 +194,50 @@ async function main() {
     const { RiskAnalyzer } = await import('./riskAnalyzer');
     const { formatRiskAssessment, formatRiskAssessmentJSON } = await import('./formatter');
 
+    // Optionally gather options interactively
+    let interactiveOptions:
+      | {
+          file?: string;
+          base?: string;
+          head?: string;
+          useStdin?: boolean;
+          title?: string;
+          description?: string;
+          format: 'beautiful' | 'pretty' | 'json';
+          failOnRisk?: string;
+          failOnMissingTests: boolean;
+        }
+      | undefined;
+
+    if (argv.ui) {
+      interactiveOptions = await runInteractive();
+    }
+
+    const effectiveFile = interactiveOptions?.file ?? argv.file;
+    const effectiveBase = interactiveOptions?.base ?? argv.base;
+    const effectiveHead = interactiveOptions?.head ?? argv.head;
+    const effectiveStdin =
+      interactiveOptions?.useStdin ?? (argv.stdin as boolean | undefined);
+    const effectiveUncommitted = interactiveOptions
+      ? !interactiveOptions.file &&
+        !interactiveOptions.base &&
+        !interactiveOptions.head &&
+        !interactiveOptions.useStdin
+      : argv.uncommitted;
+
     // Get the diff
     let diff: string;
 
-    if (argv.file) {
-      diff = GitDiffExtractor.readDiffFromFile(argv.file);
-    } else if (argv.stdin) {
+    if (effectiveFile) {
+      diff = GitDiffExtractor.readDiffFromFile(effectiveFile);
+    } else if (effectiveStdin) {
       diff = await GitDiffExtractor.readDiffFromStdin();
-    } else if (argv.uncommitted) {
+    } else if (effectiveUncommitted) {
       const extractor = new GitDiffExtractor();
       diff = await extractor.getUncommittedDiff();
-    } else if (argv.base && argv.head) {
+    } else if (effectiveBase && effectiveHead) {
       const extractor = new GitDiffExtractor();
-      diff = await extractor.getDiff(argv.base, argv.head);
+      diff = await extractor.getDiff(effectiveBase, effectiveHead);
     } else {
       console.error('Error: Must specify one of: --file, --stdin, --uncommitted, or --base/--head');
       process.exit(1);
@@ -100,14 +252,15 @@ async function main() {
     const analyzer = new RiskAnalyzer(argv['api-key']);
     const input: DiffAnalysisInput = {
       diff,
-      prTitle: argv.title,
-      prDescription: argv.description
+      prTitle: interactiveOptions?.title ?? argv.title,
+      prDescription: interactiveOptions?.description ?? argv.description
     };
 
     const assessment = await analyzer.analyzeDiff(input);
 
     // Output the result based on format option
-    const format = argv.format || 'beautiful';
+    const format =
+      interactiveOptions?.format ?? ((argv.format as 'json' | 'pretty' | 'beautiful') || 'beautiful');
     
     switch (format) {
       case 'json':
@@ -125,6 +278,31 @@ async function main() {
         break;
     }
 
+    // CI integration: determine appropriate exit code based on risk and options
+    const riskLevelOrder: Record<string, number> = { LOW: 1, MEDIUM: 2, HIGH: 3 };
+    let exitCode = 0;
+
+    const failOnRisk =
+      interactiveOptions?.failOnRisk ?? (argv['fail-on-risk'] as string | undefined);
+    if (failOnRisk) {
+      const threshold = riskLevelOrder[failOnRisk];
+      const actual = riskLevelOrder[assessment.risk_level];
+      if (threshold !== undefined && actual >= threshold) {
+        exitCode = 2; // 2 = failed due to high-enough risk
+      }
+    }
+
+    const failOnMissingTests =
+      interactiveOptions?.failOnMissingTests ??
+      ((argv['fail-on-missing-tests'] as boolean | undefined) ?? false);
+    if (failOnMissingTests && assessment.missing_tests) {
+      // If not already failing for risk, use a distinct code for missing tests
+      exitCode = exitCode === 0 ? 3 : exitCode;
+    }
+
+    if (exitCode !== 0) {
+      process.exit(exitCode);
+    }
   } catch (error) {
     if (error instanceof Error) {
       console.error(`Error: ${error.message}`);
