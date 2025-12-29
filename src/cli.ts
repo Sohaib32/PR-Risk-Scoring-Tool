@@ -39,7 +39,7 @@ async function runInteractive() {
     console.log(
       `  ${chalk.green(
         '4)'
-      )} Diff from stdin (pipe or paste, e.g. git diff | pr-risk-analyzer)`
+      )} Diff from stdin (pipe a diff, e.g. git diff | pr-risk-analyzer --ui)`
     );
     console.log('');
 
@@ -68,7 +68,7 @@ async function runInteractive() {
       if (process.stdin.isTTY) {
         throw new Error(
           'No diff data was provided on stdin. To use option 4, pipe a diff into pr-risk-analyzer, e.g.:\n' +
-            '  git diff | pr-risk-analyzer --interactive'
+            '  git diff | pr-risk-analyzer --ui'
         );
       }
     } else {
