@@ -10,3 +10,6 @@ export {
   RiskAssessment,
   DiffAnalysisInput
 } from './types';
+
+// Temporal.io exports
+export * from './temporal';

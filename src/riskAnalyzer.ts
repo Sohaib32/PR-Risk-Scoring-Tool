@@ -3,13 +3,27 @@
  */
 
 import OpenAI from "openai";
-import { RiskAssessment, DiffAnalysisInput } from "./types";
+import { RiskAssessment, DiffAnalysisInput, MigrationRisk } from "./types";
 import { RiskSchema } from "./schema";
 import { getLLMConfig } from "./config/env";
 import { logger } from "./utils/logger";
 
-// Maximum diff size to prevent token limit issues (approximately 150KB)
-const MAX_DIFF_SIZE = 150 * 1024;
+// Maximum diff size to prevent token limit issues
+// Groq free tier: 12000 tokens/minute for some models, up to 30000 for others
+// OpenAI: Much higher limits (128K context for gpt-4o-mini)
+// Conservative limit: 30KB for Groq, but can be overridden via env
+const DEFAULT_MAX_DIFF_SIZE = 30 * 1024; // 30KB default
+
+function getMaxDiffSize(): number {
+  const envLimit = process.env.MAX_DIFF_SIZE_KB;
+  if (envLimit) {
+    const kb = Number(envLimit);
+    if (!isNaN(kb) && kb > 0) {
+      return kb * 1024;
+    }
+  }
+  return DEFAULT_MAX_DIFF_SIZE;
+}
 
 /**
  * RiskAnalyzer class for analyzing git diffs and assessing production risk
@@ -23,32 +37,248 @@ export class RiskAnalyzer {
    * @param apiKey - Optional Groq API key. If not provided, will use GROQ_API_KEY or OPENAI_API_KEY from environment
    * @throws Error if no API key is provided
    */
+  private model: string;
+
   constructor(apiKey?: string) {
-    const { apiKey: resolvedKey, baseURL, provider } = getLLMConfig(apiKey);
+    const { apiKey: resolvedKey, baseURL, provider, model } = getLLMConfig(apiKey);
+    this.model = model || (provider === 'GROQ' ? 'llama-3.1-8b-instant' : 'gpt-4o-mini');
     logger.debug(
-      `Using LLM provider: ${provider}${baseURL ? " (custom baseURL)" : ""}`
+      `Using LLM provider: ${provider}, model: ${this.model}${baseURL ? " (custom baseURL)" : ""}`
     );
     this.openai = new OpenAI({ apiKey: resolvedKey, baseURL });
   }
 
   /**
+   * Split a large diff into smaller chunks by file boundaries
+   * @param diff - The git diff string
+   * @param maxChunkSize - Maximum size per chunk in bytes
+   * @returns Array of diff chunks
+   */
+  private splitDiffIntoChunks(diff: string, maxChunkSize: number): string[] {
+    const chunks: string[] = [];
+    const lines = diff.split('\n');
+    let currentChunk: string[] = [];
+    let currentSize = 0;
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const lineSize = line.length + 1; // +1 for newline
+
+      // If adding this line would exceed the limit and we have content, start a new chunk
+      if (currentSize + lineSize > maxChunkSize && currentChunk.length > 0) {
+        chunks.push(currentChunk.join('\n'));
+        currentChunk = [];
+        currentSize = 0;
+      }
+
+      // Start new chunk on file boundary (diff --git)
+      if (line.startsWith('diff --git')) {
+        // If we have content, save it and start fresh
+        if (currentChunk.length > 0) {
+          chunks.push(currentChunk.join('\n'));
+          currentChunk = [];
+          currentSize = 0;
+        }
+      }
+
+      currentChunk.push(line);
+      currentSize += lineSize;
+    }
+
+    // Add remaining chunk
+    if (currentChunk.length > 0) {
+      chunks.push(currentChunk.join('\n'));
+    }
+
+    return chunks.filter(chunk => chunk.trim().length > 0);
+  }
+
+  /**
+   * Combine multiple risk assessments into a single assessment
+   * @param assessments - Array of risk assessments to combine
+   * @returns Combined risk assessment
+   */
+  /**
+   * Create a fallback assessment when all chunks fail
+   */
+  private createFallbackAssessment(diffSize: number): RiskAssessment {
+    return {
+      risk_level: 'MEDIUM',
+      risk_summary: `Large diff (${Math.round(diffSize / 1024)}KB) could not be fully analyzed due to API token limits. Manual review recommended.`,
+      risk_factors: [
+        'Diff too large for automated analysis',
+        'API token limits exceeded',
+        'Consider analyzing specific files or switching to OpenAI provider'
+      ],
+      reviewer_focus_areas: [
+        'Review all changes manually',
+        'Check for breaking changes',
+        'Verify test coverage',
+        'Review database migrations if any'
+      ],
+      missing_tests: true, // Conservative default
+      migration_risk: 'NONE',
+    };
+  }
+
+  private combineAssessments(assessments: RiskAssessment[]): RiskAssessment {
+    if (assessments.length === 0) {
+      // This shouldn't happen (we check before calling), but return fallback just in case
+      logger.warn("combineAssessments called with empty array, returning fallback");
+      return this.createFallbackAssessment(0);
+    }
+
+    if (assessments.length === 1) {
+      return assessments[0];
+    }
+
+    // Risk level priority: HIGH > MEDIUM > LOW
+    const riskLevelOrder: Record<string, number> = { LOW: 1, MEDIUM: 2, HIGH: 3 };
+    const highestRisk = assessments.reduce((max, assessment) => {
+      return riskLevelOrder[assessment.risk_level] > riskLevelOrder[max.risk_level]
+        ? assessment
+        : max;
+    });
+
+    // Combine all risk factors and focus areas (deduplicate)
+    const allRiskFactors = new Set<string>();
+    const allFocusAreas = new Set<string>();
+    let anyMissingTests = false;
+    const migrationRisks: MigrationRisk[] = [];
+
+    assessments.forEach(assessment => {
+      assessment.risk_factors.forEach(factor => allRiskFactors.add(factor));
+      assessment.reviewer_focus_areas.forEach(area => allFocusAreas.add(area));
+      if (assessment.missing_tests) anyMissingTests = true;
+      if (assessment.migration_risk !== 'NONE') {
+        migrationRisks.push(assessment.migration_risk);
+      }
+    });
+
+    // Determine combined migration risk
+    let combinedMigrationRisk: MigrationRisk = 'NONE';
+    if (migrationRisks.includes('HIGH')) {
+      combinedMigrationRisk = 'HIGH';
+    } else if (migrationRisks.includes('LOW')) {
+      combinedMigrationRisk = 'LOW';
+    }
+
+    // Create combined summary
+    const chunkCount = assessments.length;
+    const summary = chunkCount > 1
+      ? `Analyzed ${chunkCount} file chunks. ${highestRisk.risk_summary}`
+      : highestRisk.risk_summary;
+
+    return {
+      risk_level: highestRisk.risk_level,
+      risk_summary: summary,
+      risk_factors: Array.from(allRiskFactors),
+      reviewer_focus_areas: Array.from(allFocusAreas),
+      missing_tests: anyMissingTests,
+      migration_risk: combinedMigrationRisk,
+    };
+  }
+
+  /**
    * Analyze a git diff for production risk
    * @param input - The diff and optional PR context
+   * @param enableChunking - Whether to automatically chunk large diffs (default: true)
    * @returns A validated risk assessment
    * @throws Error if diff is empty, too large, or analysis fails
    */
-  async analyzeDiff(input: DiffAnalysisInput): Promise<RiskAssessment> {
+  async analyzeDiff(input: DiffAnalysisInput, enableChunking: boolean = true): Promise<RiskAssessment> {
     // Validate input
     if (!input.diff || input.diff.trim().length === 0) {
       throw new Error("Diff cannot be empty");
     }
 
-    if (input.diff.length > MAX_DIFF_SIZE) {
+    const maxDiffSize = getMaxDiffSize();
+    const diffSize = input.diff.length;
+
+    // If diff is too large, try chunking
+    // Use a very conservative chunk size (5KB) to account for prompt overhead and token limits
+    // The prompt itself adds ~2-3KB, so 5KB diff + prompt ≈ 7-8KB total ≈ 2000 tokens (very safe)
+    const safeChunkSize = Math.min(maxDiffSize, 5 * 1024); // 5KB max per chunk
+
+    if (diffSize > safeChunkSize && enableChunking) {
+      logger.info(`Diff is large (${Math.round(diffSize / 1024)}KB), splitting into chunks for analysis`);
+      
+      const chunks = this.splitDiffIntoChunks(input.diff, safeChunkSize);
+      logger.info(`Split diff into ${chunks.length} chunks (max ${Math.round(safeChunkSize / 1024)}KB per chunk)`);
+
+      if (chunks.length === 0) {
+        throw new Error("Failed to split diff into chunks");
+      }
+
+      // Analyze each chunk
+      const assessments: RiskAssessment[] = [];
+      for (let i = 0; i < chunks.length; i++) {
+        logger.info(`Analyzing chunk ${i + 1}/${chunks.length} (${Math.round(chunks[i].length / 1024)}KB)`);
+        const chunkInput: DiffAnalysisInput = {
+          diff: chunks[i],
+          prTitle: input.prTitle ? `${input.prTitle} (chunk ${i + 1}/${chunks.length})` : undefined,
+          prDescription: input.prDescription,
+        };
+        
+        try {
+          // Try analyzing chunk (with chunking enabled for recursive splitting if needed)
+          const assessment = await this.analyzeDiff(chunkInput, true);
+          assessments.push(assessment);
+        } catch (chunkError: any) {
+          // If chunk still fails, try splitting it further
+          if (chunkError.message && (chunkError.message.includes("too large") || chunkError.message.includes("token"))) {
+            logger.warn(`Chunk ${i + 1} (${Math.round(chunks[i].length / 1024)}KB) still too large, splitting further`);
+            const smallerChunkSize = Math.max(safeChunkSize / 4, 2 * 1024); // Split into 1.25KB or 2KB chunks, whichever is larger
+            const subChunks = this.splitDiffIntoChunks(chunks[i], smallerChunkSize);
+            logger.info(`Split chunk ${i + 1} into ${subChunks.length} sub-chunks (max ${Math.round(smallerChunkSize / 1024)}KB each)`);
+            
+            for (let j = 0; j < subChunks.length; j++) {
+              logger.info(`Analyzing sub-chunk ${i + 1}.${j + 1}/${subChunks.length} (${Math.round(subChunks[j].length / 1024)}KB)`);
+              const subChunkInput: DiffAnalysisInput = {
+                diff: subChunks[j],
+                prTitle: input.prTitle ? `${input.prTitle} (chunk ${i + 1}.${j + 1})` : undefined,
+                prDescription: input.prDescription,
+              };
+              // Keep chunking enabled for sub-chunks, but with even smaller limit
+              // This allows further splitting if needed, but with a safety check
+              try {
+                const subAssessment = await this.analyzeDiff(subChunkInput, true);
+                assessments.push(subAssessment);
+              } catch (subChunkError: any) {
+                // If even sub-chunk fails, log and skip (or try one more time with minimal size)
+                if (subChunkError.message && (subChunkError.message.includes("too large") || subChunkError.message.includes("token"))) {
+                  logger.error(`Sub-chunk ${i + 1}.${j + 1} still too large even after splitting. Size: ${Math.round(subChunks[j].length / 1024)}KB. This may be a very dense file. Skipping this chunk.`);
+                  // Skip this chunk rather than failing entirely
+                  continue;
+                } else {
+                  throw subChunkError;
+                }
+              }
+            }
+          } else {
+            // Re-throw if it's a different error
+            throw chunkError;
+          }
+        }
+      }
+
+      // Combine assessments
+      if (assessments.length === 0) {
+        logger.warn(`All chunks failed to analyze. Returning fallback assessment.`);
+        return this.createFallbackAssessment(diffSize);
+      }
+      
+      logger.info(`Combining ${assessments.length} chunk assessments`);
+      return this.combineAssessments(assessments);
+    }
+
+    // If still too large and chunking disabled or not enabled, throw error
+    if (diffSize > maxDiffSize) {
       throw new Error(
-        `Diff is too large (${Math.round(input.diff.length / 1024)}KB). ` +
-          `Maximum size is ${
-            MAX_DIFF_SIZE / 1024
-          }KB. Consider analyzing smaller chunks.`
+        `Diff is too large (${Math.round(diffSize / 1024)}KB). ` +
+          `Maximum size is ${maxDiffSize / 1024}KB to avoid API token limits. ` +
+          `Chunking is disabled. Enable chunking or analyze smaller chunks manually. ` +
+          `Tip: Use \`git diff main..HEAD -- path/to/file\` to analyze specific files.`
       );
     }
 
@@ -56,7 +286,7 @@ export class RiskAnalyzer {
 
     try {
       const response = await this.openai.chat.completions.create({
-        model: "llama-3.3-70b-versatile",
+        model: this.model,
         messages: [
           {
             role: "system",
@@ -81,8 +311,32 @@ export class RiskAnalyzer {
       // Parse and validate the JSON response using Zod
       const assessment = this.parseAndValidate(content);
       return assessment;
-    } catch (error) {
+    } catch (error: any) {
       if (error instanceof Error) {
+        // Handle API rate limit / size limit errors
+        // Check both error message and status code (OpenAI SDK wraps errors)
+        const errorMessage = error.message || '';
+        const errorStatus = (error as any).status || (error as any).response?.status;
+        const isSizeLimitError = 
+          errorMessage.includes("413") ||
+          errorMessage.includes("Request too large") ||
+          errorMessage.includes("tokens per minute") ||
+          errorMessage.includes("TPM") ||
+          errorMessage.includes("too large") ||
+          errorStatus === 413;
+        
+        if (isSizeLimitError) {
+          throw new Error(
+            `Diff is too large for the LLM API. ` +
+              `Current size: ${Math.round(input.diff.length / 1024)}KB. ` +
+              `The API rejected this size due to token limits. ` +
+              `Solutions: ` +
+              `1) Analyze smaller chunks: git diff main..HEAD -- path/to/file | npx ts-node src/cli.ts --stdin ` +
+              `2) Switch to OpenAI: Set LLM_PROVIDER=OPENAI and OPENAI_API_KEY in .env ` +
+              `3) Increase MAX_DIFF_SIZE_KB=200 in .env (may still hit limits with Groq)`
+          );
+        }
+        
         // Preserve Zod validation errors
         if (
           error.message.includes("Required") ||
@@ -118,49 +372,16 @@ export class RiskAnalyzer {
    * @returns The formatted prompt string
    */
   private buildPrompt(input: DiffAnalysisInput): string {
-    const hasTests = this.hasTestChanges(input.diff);
-
-    let prompt = `Analyze this git diff for production risk. Focus on critical paths, tests, migrations, and runtime impact.
-
-Git Diff:
-\`\`\`
-${input.diff}
-\`\`\`
-`;
-
+    // Much shorter prompt to reduce token usage
+    let prompt = `Analyze git diff for production risk. Return JSON only:\n\n`;
+    
     if (input.prTitle) {
-      prompt += `\nPR Title: ${input.prTitle}`;
+      prompt += `PR: ${input.prTitle}\n`;
     }
-
-    if (input.prDescription) {
-      prompt += `\nPR Description: ${input.prDescription}`;
-    }
-
-    prompt += `
-
-Return ONLY valid JSON (no markdown, no extra text) with this exact structure:
-{
-  "risk_level": "LOW|MEDIUM|HIGH",
-  "risk_summary": "concise, actionable summary (1-2 sentences)",
-  "risk_factors": ["specific risk 1", "specific risk 2"],
-  "reviewer_focus_areas": ["area to review 1", "area to review 2"],
-  "missing_tests": true|false,
-  "migration_risk": "NONE|LOW|HIGH"
-}
-
-Guidelines:
-- risk_level: LOW for minor changes, MEDIUM for significant logic changes, HIGH for critical path/breaking changes
-- risk_summary: Be specific and actionable, don't restate the diff
-- risk_factors: List concrete risks (e.g., "Database schema change without rollback plan")
-- reviewer_focus_areas: Where reviewers should focus (e.g., "Error handling in payment flow")
-- missing_tests: Set to true ONLY if code changes lack corresponding test updates AND the change is non-trivial or high-risk. ${
-      !hasTests
-        ? "No test files are modified in this diff. Only flag missing_tests=true if this is a significant logic/business change that should have test coverage, and the change is HIGH risk. For LOW or MEDIUM risk changes without test modifications, default to false assuming existing tests cover the change."
-        : "Test files are included in this diff."
-    }
-- migration_risk: NONE (no migrations), LOW (backward compatible), HIGH (breaking changes/data migration)
-
-Keep it concise and human-readable.`;
+    
+    prompt += `Diff:\n${input.diff}\n\n`;
+    
+    prompt += `JSON format: {"risk_level":"LOW|MEDIUM|HIGH","risk_summary":"summary","risk_factors":["risk1"],"reviewer_focus_areas":["area1"],"missing_tests":true|false,"migration_risk":"NONE|LOW|HIGH"}`;
 
     return prompt;
   }

@@ -5,3 +5,7 @@ dist/
 .DS_Store
 coverage/
 *.tsbuildinfo
+
+# Temporal data
+temporal-data/
+temporal-postgres-data/

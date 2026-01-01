@@ -12,6 +12,7 @@ An AI-powered tool that analyzes pull request diffs and produces risk assessment
 - 🔄 **Multiple Input Methods**: Supports git branches, files, stdin, or uncommitted changes
 - 💡 **Actionable Insights**: Provides specific risk factors and reviewer focus areas
 - 🎨 **Beautiful CLI Output**: Colored, formatted reports for easy reading
+- ⚡ **Temporal.io Integration**: Workflow orchestration with automatic retries, scalability, and observability
 
 ## Quick Start
 
@@ -56,6 +57,40 @@ npx ts-node src/cli.ts --uncommitted
 # Launch interactive UI (menu-based)
 npx ts-node src/cli.ts --ui
 ```
+
+## Temporal.io Workflow Orchestration
+
+The tool now includes Temporal.io integration for reliable, scalable workflow orchestration. This is ideal for:
+- High-volume analysis requests
+- Production deployments
+- Automatic retries and failure recovery
+- Workflow observability
+
+> **🤔 New to Temporal?** Check out [TEMPORAL_SIMPLE_GUIDE.md](TEMPORAL_SIMPLE_GUIDE.md) for a beginner-friendly explanation!
+
+### Quick Start with Temporal
+
+1. **Start Temporal Server:**
+   ```bash
+   npm run temporal:start
+   # Or on Windows:
+   .\docker-run-temporal.ps1
+   ```
+
+2. **Start Worker (in separate terminal):**
+   ```bash
+   npm run temporal:worker
+   ```
+
+3. **Start a Workflow:**
+   ```bash
+   ts-node src/temporal/cli.ts start --base main --head feature-branch --wait
+   ```
+
+4. **View in Temporal UI:**
+   Open http://localhost:8081 to monitor workflows
+
+For detailed Temporal setup and usage, see [TEMPORAL_SETUP.md](TEMPORAL_SETUP.md).
 
 ## Usage
 
@@ -207,6 +242,18 @@ LLM_PROVIDER=GROQ
 GROQ_API_KEY=your-groq-api-key-here
 # OPENAI_API_KEY=your-openai-api-key-here
 
+# Optional: Model selection
+# For Groq: llama-3.1-8b-instant (default, faster), llama-3.3-70b-versatile (better quality)
+GROQ_MODEL=llama-3.1-8b-instant
+# For OpenAI: gpt-4o-mini (default, cost-effective), gpt-4o (better quality)
+OPENAI_MODEL=gpt-4o-mini
+# Or use LLM_MODEL to override for either provider
+# LLM_MODEL=llama-3.1-8b-instant
+
+# Optional: Diff size limit (in KB, default: 30KB)
+# Increase for larger diffs (requires higher API tier)
+MAX_DIFF_SIZE_KB=30
+
 # Optional: Stdin behavior
 STDIN_TIMEOUT_MS=30000          # 30 seconds
 STDIN_MAX_SIZE_BYTES=10485760   # 10MB
@@ -305,6 +352,8 @@ Check the `examples/` directory for:
 - **GitDiffExtractor**: Extracts diffs from git, files, or stdin
 - **CLI**: Command-line interface with multiple modes
 - **Formatter**: Beautiful colored output for terminal
+- **Temporal Workflows**: Workflow orchestration for reliable, scalable execution
+- **Temporal Activities**: Git diff extraction and risk analysis activities
 
 ## Security
 

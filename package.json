@@ -14,7 +14,12 @@
     "analyze:uncommitted": "node scripts/run.js --uncommitted",
     "analyze:file": "node scripts/run.js --file",
     "test": "npm run build && node --test",
-    "lint": "eslint src --ext .ts"
+    "lint": "eslint src --ext .ts",
+    "temporal:worker": "ts-node src/temporal/worker.ts",
+    "temporal:start": "docker-compose up -d",
+    "temporal:stop": "docker-compose down",
+    "temporal:logs": "docker-compose logs -f temporal",
+    "temporal:workflow": "ts-node src/temporal/cli.ts"
   },
   "keywords": [
     "pr",
@@ -26,6 +31,10 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
+    "@temporalio/activity": "^1.14.0",
+    "@temporalio/client": "^1.14.0",
+    "@temporalio/worker": "^1.14.0",
+    "@temporalio/workflow": "^1.14.0",
     "chalk": "^4.1.2",
     "dotenv": "^17.2.3",
     "groq-sdk": "^0.37.0",
