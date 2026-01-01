@@ -3,22 +3,21 @@
  * Activities are the actual work that gets executed
  */
 
-import { proxyActivities } from '@temporalio/workflow';
-import { GitDiffExtractor } from '../gitDiffExtractor';
-import { RiskAnalyzer } from '../riskAnalyzer';
-import type { DiffAnalysisInput, RiskAssessment } from '../types';
+import { GitDiffExtractor } from "../gitDiffExtractor";
+import { RiskAnalyzer } from "../riskAnalyzer";
+import type { DiffAnalysisInput, RiskAssessment } from "../types";
 
 // Define activity interface
 export interface RiskAnalysisActivities {
   extractGitDiff: (params: {
-    type: 'file' | 'uncommitted' | 'branches' | 'stdin';
+    type: "file" | "uncommitted" | "branches" | "stdin";
     filePath?: string;
     base?: string;
     head?: string;
     diffContent?: string;
     repoPath?: string;
   }) => Promise<string>;
-  
+
   analyzeRisk: (input: DiffAnalysisInput) => Promise<RiskAssessment>;
 }
 
@@ -28,7 +27,7 @@ export const riskAnalysisActivities = {
    * Extract git diff from various sources
    */
   async extractGitDiff(params: {
-    type: 'file' | 'uncommitted' | 'branches' | 'stdin';
+    type: "file" | "uncommitted" | "branches" | "stdin";
     filePath?: string;
     base?: string;
     head?: string;
@@ -38,28 +37,28 @@ export const riskAnalysisActivities = {
     const { type, filePath, base, head, diffContent, repoPath } = params;
 
     switch (type) {
-      case 'file':
+      case "file":
         if (!filePath) {
-          throw new Error('File path is required for file type');
+          throw new Error("File path is required for file type");
         }
         return GitDiffExtractor.readDiffFromFile(filePath);
 
-      case 'uncommitted': {
+      case "uncommitted": {
         const extractor = new GitDiffExtractor(repoPath);
         return extractor.getUncommittedDiff();
       }
 
-      case 'branches': {
+      case "branches": {
         if (!base || !head) {
-          throw new Error('Both base and head are required for branches type');
+          throw new Error("Both base and head are required for branches type");
         }
         const extractor = new GitDiffExtractor(repoPath);
         return extractor.getDiff(base, head);
       }
 
-      case 'stdin': {
+      case "stdin": {
         if (!diffContent) {
-          throw new Error('Diff content is required for stdin type');
+          throw new Error("Diff content is required for stdin type");
         }
         return diffContent;
       }
