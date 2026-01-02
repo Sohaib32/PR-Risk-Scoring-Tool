@@ -1,17 +1,20 @@
 # PR Risk Scoring Tool
 
-An AI-powered tool that analyzes pull request diffs and produces risk assessments with actionable reviewer guidance using Groq's Llama models.
+An AI-powered tool that analyzes pull request diffs and produces risk assessments with actionable reviewer guidance. Supports both direct execution and Temporal.io workflow orchestration for reliable, scalable analysis of large codebases.
 
 > **🚀 New here?** Check out [GETTING_STARTED.md](GETTING_STARTED.md) for a super simple step-by-step guide with real examples!
 
 ## Features
 
-- 🤖 **LLM-Powered Analysis**: Uses Groq's Llama 3.3 70B model for intelligent code review
+- 🤖 **LLM-Powered Analysis**: Uses Groq/OpenAI models for intelligent code review
 - 🎯 **Production Risk Assessment**: Evaluates critical paths, tests, migrations, and runtime impact
 - 📊 **Structured Output**: Returns consistent, machine-readable JSON or beautiful formatted reports
 - 🔄 **Multiple Input Methods**: Supports git branches, files, stdin, or uncommitted changes
 - 💡 **Actionable Insights**: Provides specific risk factors and reviewer focus areas
 - 🎨 **Beautiful CLI Output**: Colored, formatted reports for easy reading
+- ⚡ **Temporal.io Integration**: Workflow orchestration with automatic retries, scalability, and observability
+- 🔀 **Automatic Chunking**: Handles large diffs by automatically splitting into manageable chunks
+- 🔧 **Model Selection**: Support for multiple LLM providers (Groq, OpenAI) with configurable models
 
 ## Quick Start
 
@@ -57,9 +60,88 @@ npx ts-node src/cli.ts --uncommitted
 npx ts-node src/cli.ts --ui
 ```
 
+## Temporal.io Workflow Orchestration
+
+The tool includes Temporal.io integration for reliable, scalable workflow orchestration. This is ideal for:
+- High-volume analysis requests
+- Production deployments
+- Automatic retries and failure recovery
+- Workflow observability
+- Large diff analysis (automatic chunking)
+
+> **🤔 New to Temporal?** Check out [TEMPORAL_SIMPLE_GUIDE.md](TEMPORAL_SIMPLE_GUIDE.md) for a beginner-friendly explanation!
+
+### Quick Start with Temporal
+
+**Prerequisites:** Docker Desktop must be running
+
+1. **Start Temporal Server:**
+   ```bash
+   npm run temporal:start
+   # Or on Windows:
+   .\docker-run-temporal.ps1
+   ```
+
+2. **Start Worker (in separate terminal - keep running):**
+   ```bash
+   npm run temporal:worker
+   ```
+
+3. **Start a Workflow (in another terminal):**
+   ```bash
+   # Compare branches
+   npx ts-node src/temporal/cli.ts start --base main --head feature-branch --wait
+   
+   # Analyze from file
+   npx ts-node src/temporal/cli.ts start --file examples/sample-diff.txt --wait
+   
+   # Analyze uncommitted changes
+   npx ts-node src/temporal/cli.ts start --uncommitted --wait
+   ```
+
+4. **View in Temporal UI:**
+   Open http://localhost:8081 to monitor workflows
+
+### Temporal Commands
+
+**Start/Stop:**
+```bash
+npm run temporal:start    # Start Temporal server
+npm run temporal:stop     # Stop Temporal server
+npm run temporal:worker   # Start worker
+npm run temporal:logs     # View logs
+```
+
+**Run Workflows:**
+```bash
+# Compare branches
+npx ts-node src/temporal/cli.ts start --base main --head feature-branch --wait
+
+# Analyze from file
+npx ts-node src/temporal/cli.ts start --file diff.txt --wait
+
+# Analyze uncommitted changes
+npx ts-node src/temporal/cli.ts start --uncommitted --wait
+
+# Get result later (without --wait)
+npx ts-node src/temporal/cli.ts result <workflow-id>
+
+# Cancel a workflow
+npx ts-node src/temporal/cli.ts cancel <workflow-id>
+```
+
+### Temporal Documentation
+
+- **[TEMPORAL_SIMPLE_GUIDE.md](TEMPORAL_SIMPLE_GUIDE.md)** - Beginner-friendly explanation
+- **[TEMPORAL_SETUP.md](TEMPORAL_SETUP.md)** - Detailed setup and configuration
+- **[TEMPORAL_UI_GUIDE.md](TEMPORAL_UI_GUIDE.md)** - UI usage guide
+- **[TEMPORAL_QUICK_REFERENCE.md](TEMPORAL_QUICK_REFERENCE.md)** - Quick command reference
+- **[TEMPORAL_HOW_IT_WORKS.md](TEMPORAL_HOW_IT_WORKS.md)** - Understanding UI vs Commands
+- **[COMPARE_BRANCHES_TEMPORAL.md](COMPARE_BRANCHES_TEMPORAL.md)** - Complete guide for comparing branches
+
 ## Usage
 
-### CLI Commands
+### Standard CLI (Direct Execution)
 
 **Analyze between branches:**
 ```bash
@@ -83,8 +165,7 @@ npx ts-node src/cli.ts --uncommitted
 
 **With PR title for better analysis:**
 ```bash
-npx ts-node src/cli.ts --base main --head feature \
-  --title "Add payment retry logic"
+npx ts-node src/cli.ts --base main --head feature --title "Add payment retry logic"
 ```
 
 **Different output formats:**
@@ -107,6 +188,23 @@ npx ts-node src/cli.ts --ui
 # Built JS
 node scripts/run.js --ui
 ```
+
+### Temporal Workflows (Recommended for Production)
+
+For reliable, scalable analysis with automatic retries and monitoring:
+
+```bash
+# Compare branches
+npx ts-node src/temporal/cli.ts start --base main --head feature-branch --wait
+
+# Analyze from file
+npx ts-node src/temporal/cli.ts start --file diff.txt --wait
+
+# Analyze uncommitted changes
+npx ts-node src/temporal/cli.ts start --uncommitted --wait
+```
+
+See [Temporal.io Workflow Orchestration](#temporalio-workflow-orchestration) section above for setup instructions.
 
 ### After Building
 
@@ -141,6 +239,8 @@ pr-risk-analyzer --base main --head $GITHUB_SHA --format json --fail-on-risk MED
 
 ### Programmatic Usage
 
+#### Standard (Direct Execution)
+
 ```typescript
 import { RiskAnalyzer, GitDiffExtractor } from 'pr-risk-scoring-tool';
 
@@ -159,6 +259,27 @@ const assessment = await analyzer.analyzeDiff({
 });
 
 console.log(assessment);
+```
+
+#### Temporal Workflows
+
+```typescript
+import { startPRRiskAnalysis } from 'pr-risk-scoring-tool';
+
+// Start a workflow
+const { workflowId, result } = await startPRRiskAnalysis({
+  diffSource: {
+    type: 'branches',
+    base: 'main',
+    head: 'feature-branch'
+  },
+  prTitle: "Add payment feature",
+  prDescription: "Implements Stripe integration"
+});
+
+// Wait for result
+const output = await result;
+console.log(output.assessment);
 ```
 
 ## Output Format
@@ -206,6 +327,19 @@ LLM_PROVIDER=GROQ
 # API Keys (set one based on provider)
 GROQ_API_KEY=your-groq-api-key-here
 # OPENAI_API_KEY=your-openai-api-key-here
+
+# Optional: Model selection
+# For Groq: llama-3.1-8b-instant (default, faster), llama-3.3-70b-versatile (better quality)
+GROQ_MODEL=llama-3.1-8b-instant
+# For OpenAI: gpt-4o-mini (default, cost-effective), gpt-4o (better quality)
+OPENAI_MODEL=gpt-4o-mini
+# Or use LLM_MODEL to override for either provider
+# LLM_MODEL=llama-3.1-8b-instant
+
+# Optional: Diff size limit (in KB, default: 30KB)
+# Large diffs are automatically chunked (5KB chunks)
+# Increase for larger chunks (requires higher API tier)
+MAX_DIFF_SIZE_KB=30
 
 # Optional: Stdin behavior
 STDIN_TIMEOUT_MS=30000          # 30 seconds
@@ -270,6 +404,18 @@ npm run lint
 npx ts-node src/cli.ts --help
 ```
 
+**Temporal development:**
+```bash
+# Start Temporal server
+npm run temporal:start
+
+# Start worker (in separate terminal)
+npm run temporal:worker
+
+# Run workflow
+npm run temporal:workflow -- start --base main --head feature-branch --wait
+```
+
 ## Troubleshooting
 
 ### "API key is required"
@@ -283,9 +429,29 @@ npx ts-node src/cli.ts --help
 - Verify there are actual changes to analyze
 
 ### "Diff is too large"
-- The tool limits diffs to 100KB to prevent token issues
-- Analyze smaller chunks or specific files
-- Consider using `--base/--head` with specific commit ranges
+- The tool automatically chunks large diffs (default: 5KB per chunk)
+- For very large diffs, consider:
+  - Switching to OpenAI provider (128K context window)
+  - Analyzing specific files: `git diff main..HEAD -- path/to/file`
+  - Increasing `MAX_DIFF_SIZE_KB` in `.env` (may still hit API limits with Groq)
+- See [MODEL_SELECTION_GUIDE.md](MODEL_SELECTION_GUIDE.md) for model recommendations
+
+### Temporal Issues
+
+**"Connection refused"**
+- Ensure Temporal server is running: `docker-compose ps`
+- Wait 10-15 seconds after starting for initialization
+- Check Docker Desktop is running
+
+**"Worker failed"**
+- Verify Temporal server is running
+- Check API keys are set in `.env`
+- Restart worker: Stop (Ctrl+C) and run `npm run temporal:worker` again
+
+**"Workflow not found"**
+- Make sure worker is running
+- Check task queue name matches
+- Verify workflow ID is correct
 
 ### "Timeout waiting for stdin input"
 - Increase timeout: `STDIN_TIMEOUT_MS=60000` in `.env`
@@ -299,12 +465,46 @@ Check the `examples/` directory for:
 - `expected-output.json` - Sample risk assessment
 - `README.md` - More usage examples
 
+### Quick Examples
+
+**Standard CLI:**
+```bash
+# Quick analysis
+npx ts-node src/cli.ts --uncommitted
+
+# Compare branches
+npx ts-node src/cli.ts --base main --head feature-branch
+```
+
+**Temporal Workflows:**
+```bash
+# With monitoring and retries
+npx ts-node src/temporal/cli.ts start --base main --head feature-branch --wait
+```
+
+**See also:**
+- [COMPARE_BRANCHES_TEMPORAL.md](COMPARE_BRANCHES_TEMPORAL.md) - Complete branch comparison guide
+- [TEMPORAL_QUICK_REFERENCE.md](TEMPORAL_QUICK_REFERENCE.md) - Quick command reference
+
 ## Architecture
 
-- **RiskAnalyzer**: LLM-powered risk analysis with Groq/OpenAI
+### Core Components
+- **RiskAnalyzer**: LLM-powered risk analysis with Groq/OpenAI, automatic chunking for large diffs
 - **GitDiffExtractor**: Extracts diffs from git, files, or stdin
-- **CLI**: Command-line interface with multiple modes
+- **CLI**: Command-line interface with multiple modes (standard and Temporal)
 - **Formatter**: Beautiful colored output for terminal
+
+### Temporal Components
+- **Workflows**: Orchestrate risk analysis process with retry logic
+- **Activities**: Execute git diff extraction and risk analysis
+- **Worker**: Background service that processes workflow tasks
+- **Client**: Starts and manages workflows
+
+### Key Features
+- **Automatic Chunking**: Large diffs are automatically split into 5KB chunks
+- **Recursive Splitting**: Failed chunks are split further automatically
+- **Fallback Assessment**: Returns fallback when all chunks fail (instead of crashing)
+- **Model Selection**: Support for multiple LLM providers and models
 
 ## Security
 
