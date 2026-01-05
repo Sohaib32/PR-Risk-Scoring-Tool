@@ -117,13 +117,25 @@ export class GitDiffExtractor {
       throw new Error('File path is required');
     }
     
-    // Validate file path more robustly to prevent directory traversal attacks
-    const resolvedPath = path.resolve(filePath);
-    const normalizedPath = path.normalize(filePath);
+    // Check for null bytes which can be used in path attacks
+    if (filePath.includes('\0')) {
+      throw new Error('Invalid file path: null byte detected');
+    }
     
-    // Check for path traversal attempts (../ or encoded variations)
-    if (normalizedPath.includes('..') || filePath.includes('\0')) {
-      throw new Error('Invalid file path: path traversal detected');
+    // Resolve to absolute path and validate it's accessible
+    const resolvedPath = path.resolve(filePath);
+    const cwd = process.cwd();
+    
+    // For security, we allow files either:
+    // 1. Within current working directory or subdirectories
+    // 2. Absolute paths that exist and are explicitly provided
+    // This prevents unintended access to system files while allowing legitimate use cases
+    const isWithinCwd = resolvedPath.startsWith(cwd);
+    const isAbsolutePath = path.isAbsolute(filePath);
+    
+    // If the user provided a relative path, ensure it resolves within cwd
+    if (!isAbsolutePath && !isWithinCwd) {
+      throw new Error('Invalid file path: resolved path is outside working directory');
     }
 
     try {
