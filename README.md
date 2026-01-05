@@ -490,7 +490,7 @@ npx ts-node src/temporal/cli.ts start --base main --head feature-branch --wait
 
 ### Core Components
 - **RiskAnalyzer**: LLM-powered risk analysis with Groq/OpenAI, automatic chunking for large diffs
-- **GitDiffExtractor**: Extracts diffs from git, files, or stdin
+- **GitDiffExtractor**: Extracts diffs from git, files, or stdin with input validation
 - **CLI**: Command-line interface with multiple modes (standard and Temporal)
 - **Formatter**: Beautiful colored output for terminal
 
@@ -505,18 +505,77 @@ npx ts-node src/temporal/cli.ts start --base main --head feature-branch --wait
 - **Recursive Splitting**: Failed chunks are split further automatically
 - **Fallback Assessment**: Returns fallback when all chunks fail (instead of crashing)
 - **Model Selection**: Support for multiple LLM providers and models
+- **Input Validation**: Prevents path traversal and injection attacks
+- **Security**: Built-in protections and best practices
+
+## Best Practices
+
+### Security
+- Store API keys in `.env` file, never commit them
+- Rotate API keys regularly
+- Use separate keys for development and production
+- Review the [SECURITY.md](SECURITY.md) for security guidelines
+- Run `npm audit` regularly to check for vulnerabilities
+
+### Performance
+- For large diffs, consider using OpenAI provider (larger context window)
+- Analyze specific files rather than entire branches when possible
+- Use Temporal workflows for better reliability and observability
+- Monitor API usage and costs
+
+### Development
+- Follow the [CONTRIBUTING.md](CONTRIBUTING.md) guidelines
+- Write tests for new features
+- Run `npm run lint` before committing
+- Use the VS Code extensions we recommend
+- Keep dependencies up to date
+
+### CI/CD Integration
+- Use `--fail-on-risk` to enforce quality gates
+- Combine with `--fail-on-missing-tests` for test coverage checks
+- Store API keys in CI secrets, not in repository
+- Consider rate limits when running in CI
+- Use JSON output format for easier parsing
 
 ## Security
 
 - ✅ API keys never logged or exposed
-- ✅ Input validation on all user data
+- ✅ Input validation on all user data (prevents path traversal and injection)
 - ✅ Type-safe TypeScript throughout
 - ✅ Size limits prevent memory issues
+- ✅ CodeQL security scanning enabled
+- ✅ Dependabot monitors dependencies
+- 📄 See [SECURITY.md](SECURITY.md) for security policy and vulnerability reporting
+
+## Contributing
+
+We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for:
+- Development workflow
+- Coding standards
+- Testing guidelines
+- Pull request process
+- Reporting bugs and requesting features
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for a list of changes in each release.
 
 ## License
 
 MIT
 
-## Contributing
+## Support
 
-Contributions welcome! Please feel free to submit a Pull Request.
+- 📖 [Getting Started Guide](GETTING_STARTED.md)
+- 🔧 [Model Selection Guide](MODEL_SELECTION_GUIDE.md)
+- ⏱️ [Temporal Simple Guide](TEMPORAL_SIMPLE_GUIDE.md)
+- 🐛 [Report a Bug](.github/ISSUE_TEMPLATE/bug_report.md)
+- 💡 [Request a Feature](.github/ISSUE_TEMPLATE/feature_request.md)
+
+## Acknowledgments
+
+Built with:
+- [Groq](https://groq.com/) - Fast LLM inference
+- [OpenAI](https://openai.com/) - GPT models
+- [Temporal.io](https://temporal.io/) - Workflow orchestration
+- [TypeScript](https://www.typescriptlang.org/) - Type safety

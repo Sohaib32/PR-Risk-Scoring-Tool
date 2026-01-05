@@ -1,5 +1,9 @@
 /**
  * LLM-based risk analyzer for PR diffs
+ * 
+ * This module provides AI-powered analysis of git diffs to assess production risk.
+ * It uses LLM APIs (Groq or OpenAI) to evaluate code changes and provide structured
+ * risk assessments with actionable recommendations.
  */
 
 import OpenAI from "openai";
@@ -9,12 +13,18 @@ import { getLLMConfig } from "./config/env";
 import { logger } from "./utils/logger";
 import { isError, isSizeLimitError, getErrorMessage } from "./types/errors";
 
-// Maximum diff size to prevent token limit issues
-// Groq free tier: 12000 tokens/minute for some models, up to 30000 for others
-// OpenAI: Much higher limits (128K context for gpt-4o-mini)
-// Conservative limit: 30KB for Groq, but can be overridden via env
+/**
+ * Maximum diff size to prevent token limit issues
+ * Groq free tier: 12000 tokens/minute for some models, up to 30000 for others
+ * OpenAI: Much higher limits (128K context for gpt-4o-mini)
+ * Conservative limit: 30KB for Groq, but can be overridden via env
+ */
 const DEFAULT_MAX_DIFF_SIZE = 30 * 1024; // 30KB default
 
+/**
+ * Get the maximum allowed diff size from environment or use default
+ * @returns Maximum diff size in bytes
+ */
 function getMaxDiffSize(): number {
   const envLimit = process.env.MAX_DIFF_SIZE_KB;
   if (envLimit) {
@@ -28,18 +38,31 @@ function getMaxDiffSize(): number {
 
 /**
  * RiskAnalyzer class for analyzing git diffs and assessing production risk
- * Uses Groq's LLM API (via OpenAI SDK) to analyze code changes
+ * 
+ * This class uses LLM APIs (Groq or OpenAI via the OpenAI SDK) to intelligently 
+ * analyze code changes and provide structured risk assessments. It includes
+ * automatic chunking for large diffs and recursive splitting when needed.
+ * 
+ * @example
+ * ```typescript
+ * const analyzer = new RiskAnalyzer(process.env.GROQ_API_KEY);
+ * const assessment = await analyzer.analyzeDiff({
+ *   diff: myDiff,
+ *   prTitle: "Add payment feature",
+ *   prDescription: "Implements Stripe integration"
+ * });
+ * console.log(assessment.risk_level); // 'LOW' | 'MEDIUM' | 'HIGH'
+ * ```
  */
 export class RiskAnalyzer {
   private openai: OpenAI;
+  private model: string;
 
   /**
    * Creates a new RiskAnalyzer instance
-   * @param apiKey - Optional Groq API key. If not provided, will use GROQ_API_KEY or OPENAI_API_KEY from environment
-   * @throws Error if no API key is provided
+   * @param apiKey - Optional API key. If not provided, will use GROQ_API_KEY or OPENAI_API_KEY from environment
+   * @throws {Error} If no API key is provided or found in environment
    */
-  private model: string;
-
   constructor(apiKey?: string) {
     const {
       apiKey: resolvedKey,
@@ -59,9 +82,14 @@ export class RiskAnalyzer {
 
   /**
    * Split a large diff into smaller chunks by file boundaries
-   * @param diff - The git diff string
+   * 
+   * This method intelligently splits diffs to ensure each chunk stays within
+   * the specified size limit while respecting file boundaries when possible.
+   * 
+   * @param diff - The git diff string to split
    * @param maxChunkSize - Maximum size per chunk in bytes
-   * @returns Array of diff chunks
+   * @returns Array of diff chunks, each under the size limit
+   * @private
    */
   private splitDiffIntoChunks(diff: string, maxChunkSize: number): string[] {
     const chunks: string[] = [];
@@ -103,12 +131,14 @@ export class RiskAnalyzer {
   }
 
   /**
-   * Combine multiple risk assessments into a single assessment
-   * @param assessments - Array of risk assessments to combine
-   * @returns Combined risk assessment
-   */
-  /**
-   * Create a fallback assessment when all chunks fail
+   * Create a fallback assessment when all chunks fail analysis
+   * 
+   * This method returns a conservative risk assessment when automatic analysis
+   * cannot be completed due to size or API limitations.
+   * 
+   * @param diffSize - Size of the diff in bytes
+   * @returns A fallback risk assessment with MEDIUM risk level
+   * @private
    */
   private createFallbackAssessment(diffSize: number): RiskAssessment {
     return {
@@ -132,6 +162,16 @@ export class RiskAnalyzer {
     };
   }
 
+  /**
+   * Combine multiple risk assessments into a single comprehensive assessment
+   * 
+   * This method aggregates results from analyzing multiple diff chunks, taking
+   * the highest risk level and combining all unique risk factors and focus areas.
+   * 
+   * @param assessments - Array of risk assessments to combine
+   * @returns Combined risk assessment with aggregated data
+   * @private
+   */
   private combineAssessments(assessments: RiskAssessment[]): RiskAssessment {
     if (assessments.length === 0) {
       // This shouldn't happen (we check before calling), but return fallback just in case
@@ -201,11 +241,32 @@ export class RiskAnalyzer {
   }
 
   /**
-   * Analyze a git diff for production risk
-   * @param input - The diff and optional PR context
+   * Analyze a git diff for production risk using LLM
+   * 
+   * This is the main entry point for risk analysis. It handles:
+   * - Automatic chunking for large diffs
+   * - Recursive splitting if chunks are still too large
+   * - Fallback assessment if analysis fails
+   * - Validation of LLM responses
+   * 
+   * @param input - The diff and optional PR context (title, description)
    * @param enableChunking - Whether to automatically chunk large diffs (default: true)
-   * @returns A validated risk assessment
-   * @throws Error if diff is empty, too large, or analysis fails
+   * @returns A validated risk assessment with structured data
+   * @throws {Error} If diff is empty, too large (when chunking disabled), or analysis fails
+   * 
+   * @example
+   * ```typescript
+   * const analyzer = new RiskAnalyzer();
+   * const assessment = await analyzer.analyzeDiff({
+   *   diff: myDiff,
+   *   prTitle: "Add payment processing",
+   *   prDescription: "Implements Stripe webhook handling"
+   * });
+   * 
+   * console.log(assessment.risk_level);  // 'LOW' | 'MEDIUM' | 'HIGH'
+   * console.log(assessment.risk_factors);
+   * console.log(assessment.missing_tests);
+   * ```
    */
   async analyzeDiff(
     input: DiffAnalysisInput,
