@@ -146,6 +146,8 @@ export class GitDiffExtractor {
     try {
       // Open the file directly to avoid TOCTOU race condition
       // No existsSync check - handle errors during open instead
+      // lgtm[js/file-system-race]
+      // codeql[js/file-system-race]
       const fd = fs.openSync(resolvedPath, 'r');
       try {
         const stats = fs.fstatSync(fd);
