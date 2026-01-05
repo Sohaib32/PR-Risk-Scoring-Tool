@@ -12,7 +12,8 @@ test('getLLMConfig returns GROQ config by default', () => {
   const config = getLLMConfig();
   assert.equal(config.provider, 'GROQ');
   assert.equal(config.apiKey, 'test-key-123');
-  assert.ok(config.baseURL.includes('groq.com'));
+  // Verify the baseURL is the exact Groq endpoint
+  assert.equal(config.baseURL, 'https://api.groq.com/openai/v1');
 });
 
 test('getLLMConfig accepts override API key', () => {
