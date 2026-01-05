@@ -144,12 +144,8 @@ export class GitDiffExtractor {
     // This helps users understand they're using absolute paths
 
     try {
-      if (!fs.existsSync(resolvedPath)) {
-        const pathType = isAbsolutePath ? 'absolute' : 'relative';
-        throw new Error(`File not found: ${filePath} (${pathType} path resolved to ${resolvedPath})`);
-      }
-
-      // Open the file once to avoid TOCTOU between stat and read
+      // Open the file directly to avoid TOCTOU race condition
+      // No existsSync check - handle errors during open instead
       const fd = fs.openSync(resolvedPath, 'r');
       try {
         const stats = fs.fstatSync(fd);
@@ -172,7 +168,8 @@ export class GitDiffExtractor {
     } catch (error) {
       if (error instanceof Error) {
         if (error.message.includes('ENOENT')) {
-          throw new Error(`File not found: ${filePath}`);
+          const pathType = isAbsolutePath ? 'absolute' : 'relative';
+          throw new Error(`File not found: ${filePath} (${pathType} path resolved to ${resolvedPath})`);
         }
         if (error.message.includes('EACCES')) {
           throw new Error(`Permission denied: ${filePath}`);
