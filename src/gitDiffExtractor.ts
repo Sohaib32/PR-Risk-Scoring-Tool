@@ -7,6 +7,11 @@ import { simpleGit, SimpleGit } from 'simple-git';
 import * as fs from 'fs';
 
 /**
+ * Maximum allowed diff size in bytes to prevent memory issues
+ */
+const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
+
+/**
  * Utility class for extracting git diffs from various sources
  */
 export class GitDiffExtractor {
@@ -15,8 +20,12 @@ export class GitDiffExtractor {
   /**
    * Creates a new GitDiffExtractor instance
    * @param repoPath - Path to the git repository (defaults to current working directory)
+   * @throws {Error} If the provided path is invalid
    */
   constructor(repoPath: string = process.cwd()) {
+    if (!repoPath || typeof repoPath !== 'string') {
+      throw new Error('Repository path must be a valid string');
+    }
     this.git = simpleGit(repoPath);
   }
 
@@ -25,11 +34,21 @@ export class GitDiffExtractor {
    * @param base - Base branch or commit
    * @param head - Head branch or commit
    * @returns The git diff string
-   * @throws Error if git operation fails
+   * @throws {Error} If git operation fails or parameters are invalid
+   * @example
+   * ```typescript
+   * const extractor = new GitDiffExtractor();
+   * const diff = await extractor.getDiff('main', 'feature-branch');
+   * ```
    */
   async getDiff(base: string, head: string): Promise<string> {
     if (!base || !head) {
       throw new Error('Both base and head must be provided');
+    }
+    
+    // Validate input to prevent injection attacks
+    if (!/^[a-zA-Z0-9._\-/]+$/.test(base) || !/^[a-zA-Z0-9._\-/]+$/.test(head)) {
+      throw new Error('Invalid branch or commit name. Only alphanumeric characters, dots, dashes, underscores, and slashes are allowed.');
     }
 
     try {
@@ -56,7 +75,12 @@ export class GitDiffExtractor {
   /**
    * Get diff for uncommitted changes
    * @returns The git diff string for uncommitted changes
-   * @throws Error if git operation fails or no uncommitted changes exist
+   * @throws {Error} If git operation fails or no uncommitted changes exist
+   * @example
+   * ```typescript
+   * const extractor = new GitDiffExtractor();
+   * const diff = await extractor.getUncommittedDiff();
+   * ```
    */
   async getUncommittedDiff(): Promise<string> {
     try {
@@ -80,17 +104,33 @@ export class GitDiffExtractor {
    * Get diff from a file
    * @param filePath - Path to the diff file
    * @returns The file contents as a string
-   * @throws Error if file cannot be read
+   * @throws {Error} If file cannot be read or exceeds size limit
+   * @example
+   * ```typescript
+   * const diff = GitDiffExtractor.readDiffFromFile('./my-diff.txt');
+   * ```
    */
   static readDiffFromFile(filePath: string): string {
     if (!filePath) {
       throw new Error('File path is required');
+    }
+    
+    // Validate file path to prevent directory traversal attacks
+    if (filePath.includes('..') || filePath.includes('\0')) {
+      throw new Error('Invalid file path');
     }
 
     try {
       if (!fs.existsSync(filePath)) {
         throw new Error(`File not found: ${filePath}`);
       }
+      
+      // Check file size before reading
+      const stats = fs.statSync(filePath);
+      if (stats.size > MAX_FILE_SIZE) {
+        throw new Error(`File is too large: ${Math.round(stats.size / (1024 * 1024))}MB. Maximum allowed size is ${MAX_FILE_SIZE / (1024 * 1024)}MB`);
+      }
+      
       const content = fs.readFileSync(filePath, 'utf-8');
       if (!content || content.trim().length === 0) {
         throw new Error(`File is empty: ${filePath}`);
@@ -112,8 +152,17 @@ export class GitDiffExtractor {
 
   /**
    * Read diff from stdin
+   * @param options - Optional configuration for timeout and max size
+   * @param options.timeoutMs - Timeout in milliseconds (default: from env or 30000ms)
+   * @param options.maxSizeBytes - Maximum input size in bytes (default: from env or 10MB)
    * @returns The content read from stdin
-   * @throws Error if stdin read fails
+   * @throws {Error} If stdin read fails, times out, or exceeds size limit
+   * @example
+   * ```typescript
+   * const diff = await GitDiffExtractor.readDiffFromStdin();
+   * // With custom timeout
+   * const diff = await GitDiffExtractor.readDiffFromStdin({ timeoutMs: 60000 });
+   * ```
    */
   static async readDiffFromStdin(options?: { timeoutMs?: number; maxSizeBytes?: number }): Promise<string> {
     return new Promise((resolve, reject) => {
