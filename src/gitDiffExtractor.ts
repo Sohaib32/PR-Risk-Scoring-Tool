@@ -49,7 +49,8 @@ export class GitDiffExtractor {
     
     // Validate input to prevent injection attacks
     // Git references can contain: alphanumeric, dots, dashes, underscores, slashes, colons, tildes, carets, at symbols
-    if (!/^[a-zA-Z0-9._\-/:~^@]+$/.test(base) || !/^[a-zA-Z0-9._\-/:~^@]+$/.test(head)) {
+    // Place hyphen at the end to avoid creating unintended character ranges
+    if (!/^[a-zA-Z0-9._/:~^@-]+$/.test(base) || !/^[a-zA-Z0-9._/:~^@-]+$/.test(head)) {
       throw new Error('Invalid branch or commit name. Only alphanumeric characters and common git reference characters are allowed.');
     }
 
@@ -122,25 +123,28 @@ export class GitDiffExtractor {
       throw new Error('Invalid file path: null byte detected');
     }
     
-    // Resolve to absolute path and validate it's accessible
+    // Resolve to absolute path for validation
     const resolvedPath = path.resolve(filePath);
     const cwd = process.cwd();
-    
-    // For security, we allow files either:
-    // 1. Within current working directory or subdirectories
-    // 2. Absolute paths that exist and are explicitly provided
-    // This prevents unintended access to system files while allowing legitimate use cases
-    const isWithinCwd = resolvedPath.startsWith(cwd);
     const isAbsolutePath = path.isAbsolute(filePath);
+    
+    // Security: For relative paths, ensure they resolve within cwd
+    // For absolute paths, we allow them but this is a deliberate choice for flexibility
+    // Users should be aware that absolute paths can access any readable file
+    const isWithinCwd = resolvedPath.startsWith(cwd + path.sep) || resolvedPath === cwd;
     
     // If the user provided a relative path, ensure it resolves within cwd
     if (!isAbsolutePath && !isWithinCwd) {
       throw new Error('Invalid file path: resolved path is outside working directory');
     }
+    
+    // For absolute paths, warn in the error if file doesn't exist
+    // This helps users understand they're using absolute paths
 
     try {
       if (!fs.existsSync(resolvedPath)) {
-        throw new Error(`File not found: ${filePath}`);
+        const pathType = isAbsolutePath ? 'absolute' : 'relative';
+        throw new Error(`File not found: ${filePath} (${pathType} path resolved to ${resolvedPath})`);
       }
       
       // Check file size before reading
@@ -161,6 +165,10 @@ export class GitDiffExtractor {
         }
         if (error.message.includes('EACCES')) {
           throw new Error(`Permission denied: ${filePath}`);
+        }
+        // Re-throw if it's already our custom error
+        if (error.message.includes('File not found:') || error.message.includes('File is too large:')) {
+          throw error;
         }
         throw new Error(`Failed to read diff file: ${error.message}`);
       }
