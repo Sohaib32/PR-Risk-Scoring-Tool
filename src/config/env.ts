@@ -12,6 +12,11 @@ dotenv.config();
 type Provider = 'GROQ' | 'OPENAI';
 
 /**
+ * Valid LLM providers
+ */
+const VALID_PROVIDERS: Provider[] = ['GROQ', 'OPENAI'];
+
+/**
  * LLM configuration interface
  */
 export interface LLMConfig {
@@ -67,12 +72,14 @@ function parseNumber(value: string | undefined, fallback: number): number {
  * ```
  */
 export function getLLMConfig(overrideApiKey?: string): LLMConfig {
-  const provider = (process.env.LLM_PROVIDER?.toUpperCase() as Provider) || 'GROQ';
+  const providerStr = process.env.LLM_PROVIDER?.toUpperCase() || 'GROQ';
   
-  // Validate provider
-  if (provider !== 'GROQ' && provider !== 'OPENAI') {
-    throw new Error(`Invalid LLM provider: ${provider}. Must be 'GROQ' or 'OPENAI'`);
+  // Validate provider using type-safe approach
+  if (!VALID_PROVIDERS.includes(providerStr as Provider)) {
+    throw new Error(`Invalid LLM provider: ${providerStr}. Must be one of: ${VALID_PROVIDERS.join(', ')}`);
   }
+  
+  const provider = providerStr as Provider;
 
   let apiKey = overrideApiKey || '';
   let baseURL: string | undefined;

@@ -5,6 +5,7 @@
 
 import { simpleGit, SimpleGit } from 'simple-git';
 import * as fs from 'fs';
+import * as path from 'path';
 
 /**
  * Maximum allowed diff size in bytes to prevent memory issues
@@ -47,8 +48,9 @@ export class GitDiffExtractor {
     }
     
     // Validate input to prevent injection attacks
-    if (!/^[a-zA-Z0-9._\-/]+$/.test(base) || !/^[a-zA-Z0-9._\-/]+$/.test(head)) {
-      throw new Error('Invalid branch or commit name. Only alphanumeric characters, dots, dashes, underscores, and slashes are allowed.');
+    // Git references can contain: alphanumeric, dots, dashes, underscores, slashes, colons, tildes, carets, at symbols
+    if (!/^[a-zA-Z0-9._\-/:~^@]+$/.test(base) || !/^[a-zA-Z0-9._\-/:~^@]+$/.test(head)) {
+      throw new Error('Invalid branch or commit name. Only alphanumeric characters and common git reference characters are allowed.');
     }
 
     try {
@@ -115,23 +117,27 @@ export class GitDiffExtractor {
       throw new Error('File path is required');
     }
     
-    // Validate file path to prevent directory traversal attacks
-    if (filePath.includes('..') || filePath.includes('\0')) {
-      throw new Error('Invalid file path');
+    // Validate file path more robustly to prevent directory traversal attacks
+    const resolvedPath = path.resolve(filePath);
+    const normalizedPath = path.normalize(filePath);
+    
+    // Check for path traversal attempts (../ or encoded variations)
+    if (normalizedPath.includes('..') || filePath.includes('\0')) {
+      throw new Error('Invalid file path: path traversal detected');
     }
 
     try {
-      if (!fs.existsSync(filePath)) {
+      if (!fs.existsSync(resolvedPath)) {
         throw new Error(`File not found: ${filePath}`);
       }
       
       // Check file size before reading
-      const stats = fs.statSync(filePath);
+      const stats = fs.statSync(resolvedPath);
       if (stats.size > MAX_FILE_SIZE) {
         throw new Error(`File is too large: ${Math.round(stats.size / (1024 * 1024))}MB. Maximum allowed size is ${MAX_FILE_SIZE / (1024 * 1024)}MB`);
       }
       
-      const content = fs.readFileSync(filePath, 'utf-8');
+      const content = fs.readFileSync(resolvedPath, 'utf-8');
       if (!content || content.trim().length === 0) {
         throw new Error(`File is empty: ${filePath}`);
       }

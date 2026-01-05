@@ -2,6 +2,8 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 
+// Note: Tests require the project to be built first (npm run build)
+// This is handled automatically by the npm test script
 const { GitDiffExtractor } = require(path.resolve(process.cwd(), 'dist', 'gitDiffExtractor.js'));
 
 test('readDiffFromFile returns content for valid file', () => {
